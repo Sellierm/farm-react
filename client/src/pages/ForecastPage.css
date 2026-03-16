@@ -1,0 +1,396 @@
+.forecast-page {
+  padding: 16px;
+  height: calc(100vh - 60px);
+  box-sizing: border-box;
+}
+
+.forecast {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  gap: 16px;
+  min-height: 0;
+}
+
+.hourly,
+.daily {
+  height: 400px;
+  width: 50%;
+  margin: 0;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.daily ul {
+  padding-inline-start: 0;
+}
+
+.forecast-page img {
+  display: flex;
+  margin: 0 auto;
+  max-height: 400px;
+}
+
+.hourly {
+  position: relative;
+  overflow: hidden;
+  padding: 14px 18px;
+}
+
+.hourly-scroll-area {
+  position: relative;
+  height: 400px;
+  width: 100%;
+  overflow: hidden;
+  min-height: 400px;
+}
+
+.forecast-loading {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.forecast-loading img {
+  width: 86px;
+  height: 86px;
+  object-fit: contain;
+}
+
+.chart-wrapper {
+  margin-left: 47px;
+  margin-right: 0;
+  width: calc(100% - 47px);
+  height: 400px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(72, 72, 74, 0.5) transparent;
+  scrollbar-gutter: stable;
+}
+
+.chart-wrapper::-webkit-scrollbar {
+  height: 8px;
+}
+
+.chart-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chart-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(72, 72, 74, 0.5);
+  border-radius: 8px;
+}
+
+.y-axis-container {
+  width: 47px;
+  height: 400px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.day-list ul {
+  padding: 0;
+}
+
+.day-list li:hover {
+  background-color: rgba(72, 72, 74, 0.05);
+}
+
+.day-list img {
+  margin: 0;
+}
+
+.daily .day-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding: 2pt 4pt;
+  height: 40px;
+  border-radius: 4pt;
+  list-style: none;
+}
+
+.daily .day-list li .day-list-values {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-basis: 60%;
+}
+
+.scrolling-container {
+  position: relative;
+  height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.options-scroller::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+  background-color: transparent;
+}
+
+.scrolling-container .scrolling-container-header {
+  height: 40px;
+  width: 100%;
+  overflow-x: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: rgba(72, 72, 74, 0.05);
+  border-radius: 4pt;
+}
+
+.scrolling-container .scrolling-container-header .options-scroller {
+  padding: 0 4pt;
+  margin: 0;
+  height: 100%;
+  list-style: none;
+  overflow-x: auto;
+  font-weight: 400;
+  border-radius: 4pt;
+  overflow-y: hidden;
+}
+
+.scrolling-container .scrolling-container-header .chevron-container {
+  width: 20px;
+  margin-left: 25px;
+  margin-right: 4pt;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.scrolling-container .scrolling-container-header .options-scroller li.active {
+  font-weight: 700;
+}
+
+.scrolling-container
+  .scrolling-container-header
+  .options-scroller
+  li:first-child {
+  padding-left: 2pt;
+}
+
+.scrolling-container .scrolling-container-header .options-scroller li {
+  white-space: nowrap;
+  cursor: pointer;
+  display: inline;
+  width: 80px;
+  line-height: 30px;
+  padding: 0 8pt;
+}
+
+.scrolling-container-content {
+  flex: 1;
+  overflow: hidden;
+}
+
+.daily-detail-container {
+  height: 350px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border-radius: 8pt;
+  overflow-y: auto;
+  padding: 8pt;
+}
+
+.top-section {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.top-section p:first-child {
+  font-weight: 700;
+}
+
+.top-section p {
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.owm-weather-icon,
+.top-section img {
+  width: 75px;
+  height: 75px;
+  margin: 0;
+}
+
+.forecast-page p {
+  margin: revert;
+}
+
+.text-container {
+  max-width: 500px;
+}
+
+.orange-side {
+  border-left: 1px solid #eb6e4b;
+}
+
+.weather-items {
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  line-height: 25px;
+}
+
+.standard-padding {
+  padding-left: 16pt;
+  padding-right: 16pt;
+}
+
+.weather-items li img {
+  margin-right: 5pt;
+}
+
+.weather-items li {
+  margin-right: 25pt;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.weather-items li:nth-child(-n + 3) {
+  margin-bottom: 10pt;
+}
+
+.weather-items li img {
+  width: 25px;
+}
+
+.icon-wind-direction {
+  max-width: 25px;
+}
+
+.forecast-page table > tr {
+  vertical-align: middle;
+}
+
+.forecast-page table {
+  display: table;
+  text-align: center;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+  max-width: 500px;
+  background-color: transparent;
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+.forecast-page table th {
+  font-weight: 400;
+}
+
+.forecast-page table td,
+.forecast-page table th {
+  padding: 2pt 4pt;
+}
+
+.forecast-page th {
+  text-align: center;
+}
+
+.forecast-page table td:first-child {
+  color: #8a8a8a;
+  font-size: 12px;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.item-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 500px;
+}
+
+.item-container .item {
+  margin-right: 16pt;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+}
+
+.label {
+  font-size: 8px;
+  color: #8a8a8a;
+  text-transform: uppercase;
+  display: inline;
+  padding: 0.2em 0.6em 0.3em;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: baseline;
+  border-radius: 0.25em;
+}
+
+.value {
+  text-align: center;
+}
+
+@media only screen and (max-width: 1000px) {
+  .forecast-page {
+    height: auto;
+  }
+
+  .forecast {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .hourly {
+    width: 100%;
+    height: 400px;
+    padding: 12px;
+    overflow: hidden;
+  }
+
+  .daily {
+    width: 100%;
+    font-size: 12px;
+    padding: 12px;
+    min-height: 380px;
+  }
+
+  .forecast-page .daily li img {
+    width: 25px;
+    height: 25px;
+  }
+
+  .forecast-page .daily .day-list li {
+    max-height: 30px;
+  }
+
+  .chart-wrapper {
+    width: calc(100% - 47px);
+  }
+
+  .y-axis-container {
+    width: 47px;
+  }
+
+  .daily-detail-container {
+    overflow-x: hidden;
+  }
+
+  .forecast-page table td:first-child {
+    color: #8a8a8a;
+    font-size: 10px;
+  }
+}

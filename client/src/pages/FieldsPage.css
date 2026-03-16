@@ -1,0 +1,180 @@
+.body-overflow-hidden {
+  overflow: hidden;
+}
+
+#legend {
+  float: left;
+  height: 100%;
+  width: 15%;
+}
+
+#map {
+  display: flex;
+  margin: auto;
+  height: 100%;
+  width: 70%;
+  border: thin solid #333;
+  float: left;
+}
+
+#infoPanel {
+  display: flex;
+  flex-direction: column;
+  width: 15%;
+  height: 100%;
+  float: left;
+}
+
+#capture,
+#newCapture,
+#gpsDevices {
+  width: 100%;
+}
+
+#capture {
+  height: 35%;
+}
+
+#newCapture {
+  height: 20%;
+}
+
+#gpsDevices {
+  height: 45%;
+  overflow-y: auto;
+}
+
+#gpsDevices h2 {
+  border-top: solid #333;
+}
+
+#deviceButtons {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 5px;
+}
+
+.device-btn {
+  padding: 8px;
+  background-color: #ff6b00;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s;
+}
+
+.device-btn:hover {
+  background-color: #e05a00;
+}
+
+#newCapture h2 {
+  border-top: solid #333;
+}
+
+#mapCap {
+  display: flex;
+  justify-content: space-between;
+}
+
+#mapCap h2 {
+  font-family: "Montserrat", sans-serif;
+  font-weight: 500;
+  font-size: 32px;
+  font-style: bold;
+  text-align: center;
+  border-bottom: solid #333;
+}
+
+#capture p {
+  margin: auto 0;
+}
+
+#legend .lin p {
+  margin: auto 0;
+  padding-left: 5%;
+}
+
+.lin {
+  display: flex;
+  margin-bottom: 10%;
+  height: 8%;
+  margin-left: 3%;
+}
+
+#legend .lin div {
+  opacity: 0.75;
+  height: 100%;
+  width: 25%;
+  float: left;
+  outline: 0.1rem solid rgba(0, 0, 0, 1);
+}
+
+.fields-page select {
+  text-align: center;
+  display: flex;
+  width: 50%;
+  margin: 1% auto;
+  border: solid #555;
+  border-radius: 10px;
+}
+
+@media only screen and (min-width: 1000px) {
+  #mapCap {
+    height: 80vh;
+  }
+
+  #mapCap h2 {
+    margin: 0 0 2% 0;
+  }
+}
+
+@media only screen and (max-width: 800px) {
+  #mapCap {
+    height: 45vh;
+  }
+
+  #mapCap h2 {
+    margin: 0 0 5% 0;
+    font-size: 6px;
+  }
+
+  .lin p {
+    font-size: 8px;
+  }
+
+  .lin {
+    display: flex;
+    margin-bottom: 50%;
+    height: 3%;
+    margin-left: 5%;
+  }
+
+  #legend .lin p {
+    font-size: 8px;
+  }
+
+  .fields-page select {
+    width: 70%;
+    margin: 3% auto;
+  }
+}
+
+@media only screen and (max-width: 1000px) {
+  #mapCap {
+    height: 60vh;
+  }
+
+  #mapCap h2 {
+    margin: 0 0 5% 0;
+    font-size: 16px;
+  }
+}
+
+@media only screen and (max-width: 500px) {
+  #mapCap h2 {
+    font-size: 6px;
+  }
+}

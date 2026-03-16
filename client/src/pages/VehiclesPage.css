@@ -1,0 +1,433 @@
+/* ── Layout ───────────────────────────────────────────────────────────────── */
+.vm-page {
+  display: flex;
+  height: calc(100vh - 60px);
+  overflow: hidden;
+}
+
+.vm-panel {
+  display: flex;
+  flex-direction: column;
+  width: 50%;
+  overflow: hidden;
+}
+
+.vm-panel-left {
+  border-right: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.vm-panel-right {
+  border-left: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.vm-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  flex-shrink: 0;
+}
+
+.vm-panel-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.vm-btn {
+  border: none;
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    opacity 0.15s;
+}
+
+.vm-btn-primary {
+  background: #2e7d32;
+  color: #fff;
+}
+
+.vm-btn-primary:hover {
+  background: #1b5e20;
+}
+
+.vm-btn-ghost {
+  background: transparent;
+  color: #555;
+  border: 1px solid #ccc;
+}
+
+.vm-btn-ghost:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.vm-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  opacity: 0.6;
+  transition:
+    opacity 0.15s,
+    background 0.15s;
+}
+
+.vm-icon-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.vm-icon-btn--danger:hover {
+  background: rgba(198, 40, 40, 0.1);
+}
+
+/* ── Vehicle List ─────────────────────────────────────────────────────────── */
+.vm-vehicle-list {
+  list-style: none;
+  margin: 0;
+  padding: 10px 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.vm-vehicle-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  background: rgba(72, 72, 74, 0.04);
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.vm-vehicle-card:hover {
+  background: rgba(72, 72, 74, 0.09);
+}
+
+.vm-vehicle-card--active {
+  border-color: #2e7d32;
+  background: rgba(46, 125, 50, 0.07);
+}
+
+.vm-vehicle-card-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.vm-vehicle-icon {
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.vm-vehicle-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.vm-vehicle-name {
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vm-vehicle-meta {
+  font-size: 11px;
+  color: #8a8a8a;
+  margin-top: 2px;
+}
+
+.vm-vehicle-plate {
+  font-size: 11px;
+  color: #555;
+  font-family: monospace;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-top: 2px;
+  width: fit-content;
+}
+
+.vm-vehicle-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Maintenance List ─────────────────────────────────────────────────────── */
+.vm-maintenance-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vm-maint-card {
+  border-radius: 8px;
+  padding: 12px 14px;
+  border-left: 4px solid #ccc;
+  background: rgba(72, 72, 74, 0.04);
+  transition: background 0.15s;
+}
+
+.vm-maint-card.status-ok {
+  border-left-color: #43a047;
+}
+
+.vm-maint-card.status-warning {
+  border-left-color: #f9a825;
+  background: rgba(249, 168, 37, 0.05);
+}
+
+.vm-maint-card.status-expired {
+  border-left-color: #c62828;
+  background: rgba(198, 40, 40, 0.05);
+}
+
+.vm-maint-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.vm-maint-type {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.vm-maint-card-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.vm-maint-details {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: #666;
+  margin-top: 6px;
+}
+
+.vm-maint-next {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 6px;
+  gap: 4px;
+}
+
+.vm-maint-next.status-ok {
+  color: #2e7d32;
+}
+.vm-maint-next.status-warning {
+  color: #e65100;
+}
+.vm-maint-next.status-expired {
+  color: #b71c1c;
+}
+
+.vm-maint-next-date {
+  font-weight: 400;
+  color: #555;
+}
+
+.vm-maint-notes {
+  font-size: 12px;
+  color: #777;
+  margin-top: 6px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  padding-top: 6px;
+}
+
+/* ── Alerts banner ────────────────────────────────────────────────────────── */
+.vm-alerts-banner {
+  background: rgba(249, 168, 37, 0.12);
+  border-bottom: 1px solid rgba(249, 168, 37, 0.4);
+  color: #7b4f00;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 20px;
+  flex-shrink: 0;
+}
+
+/* ── Empty / Loading ──────────────────────────────────────────────────────── */
+.vm-loading,
+.vm-empty {
+  padding: 24px 20px;
+  color: #8a8a8a;
+  font-size: 14px;
+}
+
+.vm-empty--centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  gap: 12px;
+}
+
+.vm-empty-icon {
+  font-size: 48px;
+}
+
+/* ── Modal / Overlay ──────────────────────────────────────────────────────── */
+.vm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.vm-modal {
+  background: #fff;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 500px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.vm-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  font-weight: 700;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.vm-close-btn {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: #888;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.vm-close-btn:hover {
+  color: #333;
+}
+
+.vm-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+}
+
+/* ── Form ─────────────────────────────────────────────────────────────────── */
+.vm-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.vm-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+}
+
+.vm-form-row2 {
+  display: flex;
+  gap: 12px;
+}
+
+.vm-form-row label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.vm-form-row input,
+.vm-form-row select,
+.vm-form-row textarea {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.vm-form-row input:focus,
+.vm-form-row select:focus,
+.vm-form-row textarea:focus {
+  outline: none;
+  border-color: #2e7d32;
+}
+
+.vm-form-row textarea {
+  resize: vertical;
+  min-height: 70px;
+}
+
+.vm-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 6px;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+@media only screen and (max-width: 800px) {
+  .vm-page {
+    flex-direction: column;
+    height: auto;
+    overflow: auto;
+  }
+
+  .vm-panel {
+    width: 100%;
+    max-height: 50vh;
+  }
+
+  .vm-panel-left {
+    border-right: none;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+  }
+
+  .vm-panel-right {
+    border-left: none;
+    border-top: 1px solid rgba(0, 0, 0, 0.15);
+  }
+
+  .vm-form-row2 {
+    flex-direction: column;
+  }
+}

@@ -1,0 +1,143 @@
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  font-family: "Montserrat", sans-serif;
+  font-size: 16px;
+  text-decoration: none;
+  /*overflow-x: hidden;*/
+  font-family: "Montserrat", sans-serif;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+body::-webkit-scrollbar {
+  width: 0;
+  background-color: transparent;
+}
+
+header,
+nav,
+.nav_links {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  background-color: #24252a;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1% 0;
+}
+
+@media only screen and (max-width: 700px) {
+  header h1 {
+    font-family: "Montserrat", sans-serif;
+    font-weight: 500;
+    font-size: 16px;
+    color: #edf0f1;
+    text-align: left;
+    padding-left: 1vw;
+    width: 15vw;
+  }
+
+  header li,
+  #deco,
+  header a {
+    font-family: "Montserrat", sans-serif;
+    font-weight: 500;
+    font-size: 8px;
+    color: #edf0f1;
+    text-decoration: none;
+  }
+}
+
+@media only screen and (min-width: 700px) {
+  header h1 {
+    font-family: "Montserrat", sans-serif;
+    font-weight: 500;
+    font-size: 20px;
+    color: #edf0f1;
+    text-align: left;
+    padding-left: 1vw;
+    width: 15vw;
+  }
+
+  header li,
+  #deco,
+  header a {
+    font-family: "Montserrat", sans-serif;
+    font-weight: 500;
+    font-size: 16px;
+    color: #edf0f1;
+    text-decoration: none;
+  }
+}
+
+header li {
+  width: 5vw;
+}
+
+#logo {
+  margin: 0;
+  color: #edf0f1;
+  cursor: default;
+}
+
+.nav_links li {
+  list-style: none;
+  text-align: center;
+  display: inline-block;
+  padding: 0 2.5vw;
+}
+
+.nav_links li a {
+  transition: all 0.3s ease 0s;
+}
+
+.nav_links li a:hover {
+  color: #0088a9;
+}
+
+.highlight {
+  color: #0088a9;
+  font-weight: bold;
+}
+
+#deco {
+  padding: 1vh 0px;
+  background-color: rgba(0, 136, 169, 1);
+  border: none;
+  border-radius: 3vw;
+  cursor: pointer;
+  transition: all 0.3s ease 0s;
+  width: 15vw;
+  margin-right: 1vw;
+  padding-right: -1vw;
+  text-align: center;
+}
+
+#deco:hover {
+  background-color: rgba(0, 136, 169, 0.8);
+}
+
+.rotate-message {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.99);
+  color: #fff;
+  font-size: 24px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.rotate-message p {
+  margin: 20px;
+}

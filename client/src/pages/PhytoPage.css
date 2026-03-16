@@ -1,0 +1,372 @@
+.pp-page {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: calc(100vh - 60px);
+  box-sizing: border-box;
+}
+
+.pp-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.pp-summary-card {
+  background: rgba(72, 72, 74, 0.05);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pp-summary-card strong {
+  font-size: 24px;
+}
+
+.pp-summary-label {
+  font-size: 12px;
+  color: #777;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pp-layout {
+  display: flex;
+  gap: 16px;
+  min-height: 0;
+  flex: 1;
+}
+
+.pp-panel {
+  width: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pp-panel-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.pp-panel-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.pp-panel-subtitle {
+  color: #888;
+  font-size: 12px;
+}
+
+.pp-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.pp-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pp-btn-primary {
+  background: #2e7d32;
+  color: #fff;
+}
+
+.pp-btn-primary:hover {
+  background: #1b5e20;
+}
+
+.pp-btn-primary:disabled {
+  background: #a5d6a7;
+  cursor: not-allowed;
+}
+
+.pp-btn-ghost {
+  background: rgba(0, 0, 0, 0.05);
+  color: #444;
+}
+
+.pp-btn-ghost:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.pp-product-list,
+.pp-application-list {
+  padding: 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pp-product-card,
+.pp-application-card {
+  border-radius: 10px;
+  padding: 14px;
+  background: rgba(72, 72, 74, 0.04);
+  border: 1px solid transparent;
+}
+
+.pp-product-card {
+  cursor: pointer;
+}
+
+.pp-product-card:hover {
+  background: rgba(72, 72, 74, 0.08);
+}
+
+.pp-product-card-active {
+  border-color: #2e7d32;
+  background: rgba(46, 125, 50, 0.06);
+}
+
+.pp-product-card-top,
+.pp-application-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pp-product-name,
+.pp-application-title {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.pp-product-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #666;
+}
+
+.pp-inline-meta {
+  color: #555;
+}
+
+.pp-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pp-badge-herbicide {
+  background: rgba(76, 175, 80, 0.18);
+  color: #1b5e20;
+}
+
+.pp-badge-fongicide {
+  background: rgba(255, 152, 0, 0.18);
+  color: #e65100;
+}
+
+.pp-badge-insecticide {
+  background: rgba(244, 67, 54, 0.18);
+  color: #b71c1c;
+}
+
+.pp-badge-adjuvant,
+.pp-badge-biostimulant,
+.pp-badge-engrais-foliaire,
+.pp-badge-autre,
+.pp-badge-neutral {
+  background: rgba(33, 150, 243, 0.15);
+  color: #0d47a1;
+}
+
+.pp-card-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.pp-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+.pp-icon-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.pp-icon-btn-danger:hover {
+  background: rgba(198, 40, 40, 0.12);
+}
+
+.pp-alert {
+  margin-top: 10px;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pp-alert-warning {
+  background: rgba(255, 193, 7, 0.18);
+  color: #7c5b00;
+}
+
+.pp-notes {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  color: #666;
+  font-size: 12px;
+}
+
+.pp-empty {
+  padding: 24px;
+  color: #8a8a8a;
+}
+
+.pp-empty-center {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.pp-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.pp-modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.24);
+}
+
+.pp-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  font-weight: 700;
+}
+
+.pp-close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.pp-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.pp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pp-form-row,
+.pp-form-row2 > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pp-form-row2 {
+  display: flex;
+  gap: 12px;
+}
+
+.pp-form label {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: #666;
+  font-weight: 700;
+}
+
+.pp-form input,
+.pp-form select,
+.pp-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #d8d8d8;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 14px;
+}
+
+.pp-form input:focus,
+.pp-form select:focus,
+.pp-form textarea:focus {
+  outline: none;
+  border-color: #2e7d32;
+}
+
+.pp-form textarea {
+  resize: vertical;
+}
+
+.pp-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media only screen and (max-width: 900px) {
+  .pp-page {
+    height: auto;
+  }
+
+  .pp-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pp-layout {
+    flex-direction: column;
+  }
+
+  .pp-panel {
+    width: 100%;
+    min-height: 380px;
+  }
+
+  .pp-form-row2 {
+    flex-direction: column;
+  }
+}
