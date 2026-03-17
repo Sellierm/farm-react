@@ -21,3 +21,5 @@ Thumbs.db
 # IDE
 .vscode/settings.json
 .idea/
+
+server/modules/mapModule.js
