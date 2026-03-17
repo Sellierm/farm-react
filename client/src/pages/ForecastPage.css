@@ -1,6 +1,5 @@
 .forecast-page {
-  padding: 16px;
-  height: calc(100vh - 60px);
+  padding: 16px 16px 0 16px;
   box-sizing: border-box;
 }
 

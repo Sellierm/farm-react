@@ -223,7 +223,14 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", "maps.googleapis.com", "maps.gstatic.com"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "https://fonts.googleapis.com",
+          "https://use.fontawesome.com",
+          "https://www.google.com/maps/d",
+          "https://api.sencrop.com/v1",
+        ],
         imgSrc: [
           "'self'",
           "data:",
@@ -231,9 +238,17 @@ app.use(
           "*.googleapis.com",
           "*.gstatic.com",
           "*.google.com",
+          "https://openweathermap.org",
         ],
-        connectSrc: ["'self'", "*.googleapis.com", "wss:", "ws:"],
-        fontSrc: ["'self'", "fonts.gstatic.com"],
+        connectSrc: [
+          "'self'",
+          "*.googleapis.com",
+          "wss:",
+          "ws:",
+          "https://www.google.com",
+          "https://api.sencrop.com",
+        ],
+        fontSrc: ["'self'", "fonts.gstatic.com", "https://use.fontawesome.com"],
         frameSrc: ["'none'"],
         objectSrc: ["'none'"],
         workerSrc: ["blob:"],
@@ -885,18 +900,15 @@ io.on("connection", (socket) => {
 
   // Allowed Sencrop measure names — whitelist to prevent API parameter injection.
   const VALID_MEASURES = new Set([
+    "TEMPERATURE",
+    "TEMPERATURE_MIN",
+    "TEMPERATURE_MAX",
     "RAIN_FALL",
-    "WIND_MEAN",
-    "WIND_GUST",
-    "WIND_MAX",
-    "WIND_DIRECTION_VARIATION",
-    "T_MIN",
-    "T_MAX",
-    "T_CURRENT",
     "RELATIVE_HUMIDITY",
-    "LEAF_WETNESS",
-    "SOIL_TEMPERATURE",
-    "SOIL_MOISTURE",
+    "WET_TEMPERATURE",
+    "WIND_SPEED",
+    "WIND_GUST",
+    "WIND_DIRECTION",
   ]);
 
   // ISO-8601 date-time pattern accepted by the Sencrop API.
