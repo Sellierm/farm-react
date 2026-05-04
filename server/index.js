@@ -496,6 +496,8 @@ app.post("/api/location", locationLimiter, function (req, res) {
       source,
       altitude,
       accuracy,
+      speed,
+      heading,
     } = req.body;
 
     if (!GPS_INGEST_KEY) {
@@ -505,7 +507,6 @@ app.post("/api/location", locationLimiter, function (req, res) {
         .json({ success: false, message: "GPS_INGEST_KEY is not configured" });
     }
 
-    // Timing-safe key comparison to prevent timing attacks.
     const keyStr = typeof key === "string" ? key : "";
     const expectedKey = GPS_INGEST_KEY || "";
     const keyBuf = Buffer.from(keyStr, "utf8");
@@ -568,6 +569,8 @@ app.post("/api/location", locationLimiter, function (req, res) {
       source: source || "unknown",
       altitude: altitude !== undefined ? altitude : null,
       accuracy: accuracy !== undefined ? accuracy : null,
+      speed: speed !== undefined ? speed : null,
+      heading: heading !== undefined ? heading : null,
     };
 
     positionsMap[deviceId] = newPoint;
@@ -613,6 +616,9 @@ app.post("/api/location", locationLimiter, function (req, res) {
         .json({ success: false, message: "File write error" });
     }
 
+    // Pousser en temps réel vers tous les clients WebSocket authentifiés
+    io.emit("location_update", newPoint);
+
     return res.status(200).json({ success: true });
   } catch (error) {
     console.error("[LOCATION] Erreur interne:", error);
@@ -651,174 +657,6 @@ app.get("/api/positions-history", authMiddleware, function (req, res) {
       .status(500)
       .json({ success: false, message: "Error reading positions history" });
   }
-});
-
-// ── Vehicles & Maintenance API ────────────────────────────────────────────────
-
-// GET /api/vehicles
-app.get("/api/vehicles", authMiddleware, function (req, res) {
-  connection.query(
-    "SELECT * FROM vehicles ORDER BY name ASC",
-    function (err, results) {
-      if (err) {
-        console.error("DB error [GET /api/vehicles]:", err);
-        return res.status(500).json({ error: "Internal server error" });
-      }
-      res.json(results);
-    },
-  );
-});
-
-// POST /api/vehicles
-app.post("/api/vehicles", authMiddleware, function (req, res) {
-  const { name, type, brand, model, year, plate, hours } = req.body;
-  if (!name) return res.status(400).json({ error: "name is required" });
-  connection.query(
-    "INSERT INTO vehicles (name, type, brand, model, year, plate, hours) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [
-      name,
-      type || null,
-      brand || null,
-      model || null,
-      year || null,
-      plate || null,
-      hours || 0,
-    ],
-    function (err, result) {
-      if (err) {
-        console.error("DB error [POST /api/vehicles]:", err);
-        return res.status(500).json({ error: "Internal server error" });
-      }
-      res.status(201).json({ id: result.insertId });
-    },
-  );
-});
-
-// PUT /api/vehicles/:id
-app.put("/api/vehicles/:id", authMiddleware, function (req, res) {
-  const { id } = req.params;
-  const { name, type, brand, model, year, plate, hours } = req.body;
-  if (!name) return res.status(400).json({ error: "name is required" });
-  connection.query(
-    "UPDATE vehicles SET name=?, type=?, brand=?, model=?, year=?, plate=?, hours=? WHERE id=?",
-    [
-      name,
-      type || null,
-      brand || null,
-      model || null,
-      year || null,
-      plate || null,
-      hours || 0,
-      id,
-    ],
-    function (err) {
-      if (err) {
-        console.error("DB error [PUT /api/vehicles]:", err);
-        return res.status(500).json({ error: "Internal server error" });
-      }
-      res.json({ success: true });
-    },
-  );
-});
-
-// DELETE /api/vehicles/:id
-app.delete("/api/vehicles/:id", authMiddleware, function (req, res) {
-  const { id } = req.params;
-  connection.query("DELETE FROM vehicles WHERE id=?", [id], function (err) {
-    if (err) {
-      console.error("DB error [DELETE /api/vehicles]:", err);
-      return res.status(500).json({ error: "Internal server error" });
-    }
-    res.json({ success: true });
-  });
-});
-
-// GET /api/vehicles/:id/maintenance
-app.get("/api/vehicles/:id/maintenance", authMiddleware, function (req, res) {
-  const { id } = req.params;
-  connection.query(
-    "SELECT * FROM maintenance WHERE vehicle_id=? ORDER BY date DESC",
-    [id],
-    function (err, results) {
-      if (err) {
-        console.error("DB error [GET maintenance]:", err);
-        return res.status(500).json({ error: "Internal server error" });
-      }
-      res.json(results);
-    },
-  );
-});
-
-// POST /api/vehicles/:id/maintenance
-app.post("/api/vehicles/:id/maintenance", authMiddleware, function (req, res) {
-  const { id } = req.params;
-  const { type, date, hours_at_service, next_date, next_hours, notes } =
-    req.body;
-  if (!type || !date)
-    return res.status(400).json({ error: "type and date are required" });
-  connection.query(
-    "INSERT INTO maintenance (vehicle_id, type, date, hours_at_service, next_date, next_hours, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [
-      id,
-      type,
-      date,
-      hours_at_service !== "" && hours_at_service != null
-        ? hours_at_service
-        : null,
-      next_date || null,
-      next_hours !== "" && next_hours != null ? next_hours : null,
-      notes || null,
-    ],
-    function (err, result) {
-      if (err) {
-        console.error("DB error [POST maintenance]:", err);
-        return res.status(500).json({ error: "Internal server error" });
-      }
-      res.status(201).json({ id: result.insertId });
-    },
-  );
-});
-
-// PUT /api/maintenance/:id
-app.put("/api/maintenance/:id", authMiddleware, function (req, res) {
-  const { id } = req.params;
-  const { type, date, hours_at_service, next_date, next_hours, notes } =
-    req.body;
-  if (!type || !date)
-    return res.status(400).json({ error: "type and date are required" });
-  connection.query(
-    "UPDATE maintenance SET type=?, date=?, hours_at_service=?, next_date=?, next_hours=?, notes=? WHERE id=?",
-    [
-      type,
-      date,
-      hours_at_service !== "" && hours_at_service != null
-        ? hours_at_service
-        : null,
-      next_date || null,
-      next_hours !== "" && next_hours != null ? next_hours : null,
-      notes || null,
-      id,
-    ],
-    function (err) {
-      if (err) {
-        console.error("DB error [PUT maintenance]:", err);
-        return res.status(500).json({ error: "Internal server error" });
-      }
-      res.json({ success: true });
-    },
-  );
-});
-
-// DELETE /api/maintenance/:id
-app.delete("/api/maintenance/:id", authMiddleware, function (req, res) {
-  const { id } = req.params;
-  connection.query("DELETE FROM maintenance WHERE id=?", [id], function (err) {
-    if (err) {
-      console.error("DB error [DELETE maintenance]:", err);
-      return res.status(500).json({ error: "Internal server error" });
-    }
-    res.json({ success: true });
-  });
 });
 
 // ── Latest GPS Positions ───────────────────────────────────────────────────────
@@ -990,6 +828,518 @@ io.on("connection", (socket) => {
   });
 
   socket.on("forceDisconnect", () => socket.disconnect(true));
+});
+
+// ── Phyto Management ───────────────────────────────────────────────────────
+
+// GET all phyto products
+app.get("/api/phyto/products", authMiddleware, (req, res) => {
+  connection.query(
+    "SELECT * FROM phyto_products ORDER BY name ASC",
+    (err, results) => {
+      if (err) {
+        console.error("Error fetching products:", err);
+        return res
+          .status(500)
+          .json({ success: false, message: "Error fetching products" });
+      }
+      res.json(results || []);
+    },
+  );
+});
+
+// POST create phyto product
+app.post("/api/phyto/products", authMiddleware, (req, res) => {
+  const { name, category, stock, unit, notes } = req.body;
+
+  if (!name) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Product name is required" });
+  }
+
+  connection.query(
+    "INSERT INTO phyto_products (name, category, stock, unit, notes) VALUES (?, ?, ?, ?, ?)",
+    [name, category || "Autre", stock || 0, unit || "L", notes || ""],
+    (err, results) => {
+      if (err) {
+        console.error("Error creating product:", err);
+        return res
+          .status(500)
+          .json({ success: false, message: "Error creating product" });
+      }
+      res.status(201).json({
+        success: true,
+        id: results.insertId,
+        message: "Product created",
+      });
+    },
+  );
+});
+
+// PUT update phyto product
+app.put("/api/phyto/products/:id", authMiddleware, (req, res) => {
+  const { id } = req.params;
+  const { name, category, stock, unit, notes } = req.body;
+
+  if (!name) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Product name is required" });
+  }
+
+  connection.query(
+    "UPDATE phyto_products SET name = ?, category = ?, stock = ?, unit = ?, notes = ? WHERE id = ?",
+    [name, category || "Autre", stock || 0, unit || "L", notes || "", id],
+    (err) => {
+      if (err) {
+        console.error("Error updating product:", err);
+        return res
+          .status(500)
+          .json({ success: false, message: "Error updating product" });
+      }
+      res.json({ success: true, message: "Product updated" });
+    },
+  );
+});
+
+// DELETE phyto product
+app.delete("/api/phyto/products/:id", authMiddleware, (req, res) => {
+  const { id } = req.params;
+
+  connection.query("DELETE FROM phyto_products WHERE id = ?", [id], (err) => {
+    if (err) {
+      console.error("Error deleting product:", err);
+      return res
+        .status(500)
+        .json({ success: false, message: "Error deleting product" });
+    }
+    res.json({ success: true, message: "Product deleted" });
+  });
+});
+
+// GET all phyto applications (with associated products)
+app.get("/api/phyto/applications", authMiddleware, (req, res) => {
+  connection.query(
+    `SELECT 
+      a.id,
+      a.date,
+      a.notes,
+      a.created_at,
+      a.updated_at,
+      COALESCE(JSON_ARRAYAGG(
+        CASE WHEN ap.id IS NOT NULL THEN JSON_OBJECT(
+          'id', ap.id,
+          'product_id', ap.product_id,
+          'product_name', p.name,
+          'quantity_used', ap.quantity_used
+        ) END
+      ), JSON_ARRAY()) as products
+    FROM phyto_applications a
+    LEFT JOIN phyto_application_products ap ON a.id = ap.application_id
+    LEFT JOIN phyto_products p ON ap.product_id = p.id
+    GROUP BY a.id
+    ORDER BY a.date DESC`,
+    (err, results) => {
+      if (err) {
+        console.error("Error fetching applications:", err);
+        return res
+          .status(500)
+          .json({ success: false, message: "Error fetching applications" });
+      }
+      res.json(results || []);
+    },
+  );
+});
+
+// POST create phyto application with multiple products
+app.post("/api/phyto/applications", authMiddleware, (req, res) => {
+  const { date, products } = req.body;
+
+  if (!date || !Array.isArray(products) || products.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Date and at least one product are required",
+    });
+  }
+
+  // Vérifier que le stock est suffisant pour chaque produit
+  const productIds = products
+    .filter((p) => p.quantity_used && Number(p.quantity_used) > 0)
+    .map((p) => p.product_id);
+
+  if (productIds.length === 0) {
+    // Pas de produit avec quantité, continuer directement
+    connection.query(
+      "INSERT INTO phyto_applications (date, notes) VALUES (?, ?)",
+      [date, req.body.notes || ""],
+      (err, applicationResult) => {
+        if (err) {
+          console.error("Error creating application:", err);
+          return res
+            .status(500)
+            .json({ success: false, message: "Error creating application" });
+        }
+
+        const applicationId = applicationResult.insertId;
+        const productInserts = products.map((p) => [
+          applicationId,
+          p.product_id,
+          p.quantity_used || null,
+        ]);
+
+        connection.query(
+          "INSERT INTO phyto_application_products (application_id, product_id, quantity_used) VALUES ?",
+          [productInserts],
+          (err) => {
+            if (err) {
+              console.error("Error adding products to application:", err);
+              return res.status(500).json({
+                success: false,
+                message: "Error adding products to application",
+              });
+            }
+            res.status(201).json({
+              success: true,
+              message: "Application created successfully",
+            });
+          },
+        );
+      },
+    );
+    return;
+  }
+
+  connection.query(
+    "SELECT id, name, stock, unit FROM phyto_products WHERE id IN (?)",
+    [productIds],
+    (err, existingProducts) => {
+      if (err) {
+        console.error("Error fetching products:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Error verifying stock",
+        });
+      }
+
+      // Vérifier chaque produit
+      for (const p of products) {
+        if (!p.quantity_used || Number(p.quantity_used) <= 0) continue;
+
+        const existingProduct = existingProducts.find(
+          (ep) => ep.id === p.product_id,
+        );
+        if (!existingProduct) {
+          return res.status(400).json({
+            success: false,
+            message: `Product with ID ${p.product_id} not found`,
+          });
+        }
+
+        const availableStock = Number(existingProduct.stock || 0);
+        const requestedQuantity = Number(p.quantity_used);
+
+        if (requestedQuantity > availableStock) {
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient stock for ${existingProduct.name}. Available: ${availableStock} ${existingProduct.unit}`,
+            product: existingProduct.name,
+            available: availableStock,
+            requested: requestedQuantity,
+          });
+        }
+      }
+
+      // Stock vérifié, créer l'application
+      connection.query(
+        "INSERT INTO phyto_applications (date, notes) VALUES (?, ?)",
+        [date, req.body.notes || ""],
+        (err, applicationResult) => {
+          if (err) {
+            console.error("Error creating application:", err);
+            return res
+              .status(500)
+              .json({ success: false, message: "Error creating application" });
+          }
+
+          const applicationId = applicationResult.insertId;
+          const productInserts = products.map((p) => [
+            applicationId,
+            p.product_id,
+            p.quantity_used || null,
+          ]);
+
+          connection.query(
+            "INSERT INTO phyto_application_products (application_id, product_id, quantity_used) VALUES ?",
+            [productInserts],
+            (err) => {
+              if (err) {
+                console.error("Error adding products to application:", err);
+                return res.status(500).json({
+                  success: false,
+                  message: "Error adding products to application",
+                });
+              }
+
+              // Décrémenter le stock pour chaque produit utilisé
+              const updateStockQueries = products
+                .filter((p) => p.quantity_used)
+                .map((p) => ({
+                  sql: "UPDATE phyto_products SET stock = stock - ? WHERE id = ?",
+                  values: [Number(p.quantity_used), p.product_id],
+                }));
+
+              if (updateStockQueries.length === 0) {
+                return res.status(201).json({
+                  success: true,
+                  id: applicationId,
+                  message: "Application created",
+                });
+              }
+
+              let completed = 0;
+              updateStockQueries.forEach((query) => {
+                connection.query(query.sql, query.values, (err) => {
+                  if (err) console.error("Error updating stock:", err);
+                  completed++;
+                  if (completed === updateStockQueries.length) {
+                    res.status(201).json({
+                      success: true,
+                      id: applicationId,
+                      message: "Application created",
+                    });
+                  }
+                });
+              });
+            },
+          );
+        },
+      );
+    },
+  );
+});
+
+// PUT update phyto application
+app.put("/api/phyto/applications/:id", authMiddleware, (req, res) => {
+  const { id } = req.params;
+  const { date, notes, products } = req.body;
+
+  if (!date || !Array.isArray(products) || products.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Date and at least one product are required",
+    });
+  }
+
+  // Récupérer les anciens produits pour augmenter leurs stocks
+  connection.query(
+    "SELECT product_id, quantity_used FROM phyto_application_products WHERE application_id = ?",
+    [id],
+    (err, oldProducts) => {
+      if (err) {
+        console.error("Error fetching old products:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Error updating application",
+        });
+      }
+
+      // Augmenter le stock des anciens produits
+      const restoreStockQueries = (oldProducts || [])
+        .filter((p) => p.quantity_used)
+        .map((p) => ({
+          sql: "UPDATE phyto_products SET stock = stock + ? WHERE id = ?",
+          values: [p.quantity_used, p.product_id],
+        }));
+
+      // Mettre à jour l'application
+      connection.query(
+        "UPDATE phyto_applications SET date = ?, notes = ? WHERE id = ?",
+        [date, notes || "", id],
+        (err) => {
+          if (err) {
+            console.error("Error updating application:", err);
+            return res
+              .status(500)
+              .json({ success: false, message: "Error updating application" });
+          }
+
+          // Supprimer les anciens produits
+          connection.query(
+            "DELETE FROM phyto_application_products WHERE application_id = ?",
+            [id],
+            (err) => {
+              if (err) {
+                console.error("Error deleting old products:", err);
+                return res.status(500).json({
+                  success: false,
+                  message: "Error updating application products",
+                });
+              }
+
+              // Insérer les nouveaux produits
+              const productInserts = products.map((p) => [
+                id,
+                p.product_id,
+                p.quantity_used || null,
+              ]);
+
+              connection.query(
+                "INSERT INTO phyto_application_products (application_id, product_id, quantity_used) VALUES ?",
+                [productInserts],
+                (err) => {
+                  if (err) {
+                    console.error("Error adding products:", err);
+                    return res.status(500).json({
+                      success: false,
+                      message: "Error updating application products",
+                    });
+                  }
+
+                  // Exécuter les restaurations de stock
+                  if (restoreStockQueries.length === 0) {
+                    // Décrémenter les nouveaux produits
+                    const newDecrementQueries = products
+                      .filter((p) => p.quantity_used)
+                      .map((p) => ({
+                        sql: "UPDATE phyto_products SET stock = stock - ? WHERE id = ?",
+                        values: [Number(p.quantity_used), p.product_id],
+                      }));
+
+                    if (newDecrementQueries.length === 0) {
+                      return res.json({
+                        success: true,
+                        message: "Application updated",
+                      });
+                    }
+
+                    let completed = 0;
+                    newDecrementQueries.forEach((query) => {
+                      connection.query(query.sql, query.values, (err) => {
+                        if (err) console.error("Error updating stock:", err);
+                        completed++;
+                        if (completed === newDecrementQueries.length) {
+                          res.json({
+                            success: true,
+                            message: "Application updated",
+                          });
+                        }
+                      });
+                    });
+                  } else {
+                    let restoreCompleted = 0;
+                    restoreStockQueries.forEach((query) => {
+                      connection.query(query.sql, query.values, (err) => {
+                        if (err) console.error("Error restoring stock:", err);
+                        restoreCompleted++;
+                        if (restoreCompleted === restoreStockQueries.length) {
+                          // Décrémenter les nouveaux produits
+                          const newDecrementQueries = products
+                            .filter((p) => p.quantity_used)
+                            .map((p) => ({
+                              sql: "UPDATE phyto_products SET stock = stock - ? WHERE id = ?",
+                              values: [Number(p.quantity_used), p.product_id],
+                            }));
+
+                          if (newDecrementQueries.length === 0) {
+                            return res.json({
+                              success: true,
+                              message: "Application updated",
+                            });
+                          }
+
+                          let decrementCompleted = 0;
+                          newDecrementQueries.forEach((query) => {
+                            connection.query(query.sql, query.values, (err) => {
+                              if (err)
+                                console.error("Error updating stock:", err);
+                              decrementCompleted++;
+                              if (
+                                decrementCompleted ===
+                                newDecrementQueries.length
+                              ) {
+                                res.json({
+                                  success: true,
+                                  message: "Application updated",
+                                });
+                              }
+                            });
+                          });
+                        }
+                      });
+                    });
+                  }
+                },
+              );
+            },
+          );
+        },
+      );
+    },
+  );
+});
+
+// DELETE phyto application
+app.delete("/api/phyto/applications/:id", authMiddleware, (req, res) => {
+  const { id } = req.params;
+  const restoreStock = req.query.restoreStock === "true";
+
+  // Récupérer les produits de l'application pour augmenter leurs stocks
+  connection.query(
+    "SELECT product_id, quantity_used FROM phyto_application_products WHERE application_id = ?",
+    [id],
+    (err, products) => {
+      if (err) {
+        console.error("Error fetching products:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Error deleting application",
+        });
+      }
+
+      // Supprimer l'application (les produits seront aussi supprimés via cascade)
+      connection.query(
+        "DELETE FROM phyto_applications WHERE id = ?",
+        [id],
+        (err) => {
+          if (err) {
+            console.error("Error deleting application:", err);
+            return res
+              .status(500)
+              .json({ success: false, message: "Error deleting application" });
+          }
+
+          // Si restoreStock est false, ne pas augmenter le stock
+          if (!restoreStock) {
+            return res.json({ success: true, message: "Application deleted" });
+          }
+
+          // Augmenter le stock pour chaque produit utilisé
+          const increaseStockQueries = (products || [])
+            .filter((p) => p.quantity_used)
+            .map((p) => ({
+              sql: "UPDATE phyto_products SET stock = stock + ? WHERE id = ?",
+              values: [p.quantity_used, p.product_id],
+            }));
+
+          if (increaseStockQueries.length === 0) {
+            return res.json({ success: true, message: "Application deleted" });
+          }
+
+          let completed = 0;
+          increaseStockQueries.forEach((query) => {
+            connection.query(query.sql, query.values, (err) => {
+              if (err) console.error("Error updating stock:", err);
+              completed++;
+              if (completed === increaseStockQueries.length) {
+                res.json({ success: true, message: "Application deleted" });
+              }
+            });
+          });
+        },
+      );
+    },
+  );
 });
 
 // SPA fallback: any unknown route returns React index.html.

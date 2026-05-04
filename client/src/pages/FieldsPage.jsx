@@ -17,13 +17,38 @@ const CROP_COLORS = {
 
 const YEARS = [2022, 2023, 2024, 2025, 2026];
 
+const normalizeCultureName = (str) => {
+  if (!str) return "N/A";
+  str = str.toLowerCase();
+  // Strip HTML tags if any slipped through
+  str = str.replace(/<[^>]+>/g, "");
+
+  if (str.includes("pdt")) return "Pdt";
+  if (str.includes("bl")) return "Blé";
+  if (str.includes("seigle")) return "Seigle/Maïs";
+  if (str.includes("ma")) return "Maïs";
+  if (str.includes("bett")) return "Betteraves";
+  if (str.includes("colz")) return "Colza";
+  if (str.includes("herb") || str.includes("prairie")) return "Herbe";
+  return "N/A";
+};
+
 export default function FieldsPage() {
   const socket = useSocket();
   const mapRef = useRef(null);
   const [year, setYear] = useState(new Date().getFullYear());
+  const yearRef = useRef(year);
+
+  // Synchronise yearRef.current with year
+  useEffect(() => {
+    yearRef.current = year;
+  }, [year]);
+
   const [mapsKey, setMapsKey] = useState("");
   const [mapInfo, setMapInfo] = useState(["", ""]);
   const [totalHa, setTotalHa] = useState(null);
+  const [cropTotals, setCropTotals] = useState({});
+  const [selectedCrop, setSelectedCrop] = useState(null);
   const [gpsPositions, setGpsPositions] = useState({});
   const [showPdtInfo, setShowPdtInfo] = useState(false);
 
@@ -40,34 +65,101 @@ export default function FieldsPage() {
 
   usePageMeta("Fields", "/assets/icons8-champ-32.png");
 
-  // Load Google Maps API key
   useEffect(() => {
     fetch("/api/config", { credentials: "include" })
       .then((r) => r.json())
       .then((d) => setMapsKey(d.googleMapsApiKey));
   }, []);
 
-  // Socket: receive KML plan URL
   useEffect(() => {
     if (!socket) return;
     socket.on("getPlan", (src) => initGoogleMap(src));
     return () => socket.off("getPlan");
-  }, [socket, mapsKey]); // eslint-disable-line
+  }, [socket, mapsKey]);
 
-  // Masquer le scroll du body sur cette page uniquement
+  // ── WebSocket : mise à jour temps réel des positions GPS ──────────────────
+  useEffect(() => {
+    console.log("year:", year, "current:", new Date().getFullYear());
+    const isCurrentYear = year === new Date().getFullYear();
+    if (!socket) return;
+
+    if (!isCurrentYear) {
+      // Hide markers and polylines when selected year is not current
+      gpsMarkersRef.current.forEach((m) => m.setMap(null));
+      gpsMarkersRef.current = [];
+      markerByDeviceRef.current = {};
+      infoWindowByDeviceRef.current = {};
+      activeInfoWindowRef.current?.close();
+      activeInfoWindowRef.current = null;
+      activeDeviceIdRef.current = null;
+
+      // Also hide polylines
+      gpsPolylinesRef.current.forEach((line) => line.setMap(null));
+      gpsPolylinesRef.current = [];
+      polylinesMapRef.current = {};
+
+      setGpsPositions({});
+      return;
+    }
+
+    const handleLocationUpdate = (point) => {
+      const map = mapInstanceRef.current;
+      if (!map) return;
+
+      const deviceId = String(point.device_id);
+      const lat = parseFloat(point.latitude);
+      const lng = parseFloat(point.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+      const newPos = { lat, lng };
+
+      // Mettre à jour la signature pour éviter les re-rendus inutiles
+      gpsSignaturesRef.current[deviceId] =
+        String(point.timestamp) + "|" + lat + "|" + lng;
+
+      markerPositionsRef.current[deviceId] = newPos;
+
+      // Mettre à jour ou créer le marqueur
+      if (markerByDeviceRef.current[deviceId]) {
+        // Marqueur existant — juste déplacer
+        markerByDeviceRef.current[deviceId].position = newPos;
+
+        // Mettre à jour l'infoWindow si ouverte
+        if (
+          activeDeviceIdRef.current === deviceId &&
+          infoWindowByDeviceRef.current[deviceId]
+        ) {
+          infoWindowByDeviceRef.current[deviceId].setContent(
+            buildInfoWindowContent(deviceId, point),
+          );
+        }
+      } else {
+        // Nouveau marqueur
+        createMarker(map, deviceId, newPos, point);
+      }
+
+      // Ajouter le point à la polyligne existante
+      appendToPolyline(map, deviceId, newPos);
+
+      // Mettre à jour le state React pour le panneau latéral
+      setGpsPositions((prev) => ({ ...prev, [deviceId]: point }));
+    };
+
+    socket.on("location_update", handleLocationUpdate);
+    return () => socket.off("location_update", handleLocationUpdate);
+  }, [socket, year]); // eslint-disable-line
+
   useEffect(() => {
     document.body.classList.add("body-overflow-hidden");
-    return () => {
-      document.body.classList.remove("body-overflow-hidden");
-    };
+    return () => document.body.classList.remove("body-overflow-hidden");
   }, []);
 
   const changeYear = (y) => {
     setYear(y);
+    yearRef.current = y; // Update synchronously!
     if (socket) socket.emit("askPlan", y);
   };
 
-  // Emit on first load (once key is ready)
   useEffect(() => {
     if (socket && mapsKey) socket.emit("askPlan", year);
   }, [socket, mapsKey]); // eslint-disable-line
@@ -86,6 +178,27 @@ export default function FieldsPage() {
     return palette[hash % palette.length];
   };
 
+  // ── Polyligne : map par device pour pouvoir étendre en temps réel ─────────
+  const polylinesMapRef = useRef({});
+
+  const appendToPolyline = (map, deviceId, newPos) => {
+    if (!polylinesMapRef.current[deviceId]) {
+      const polyline = new window.google.maps.Polyline({
+        path: [newPos],
+        geodesic: true,
+        strokeColor: getTrailColor(deviceId),
+        strokeOpacity: 0.85,
+        strokeWeight: 3,
+        map,
+      });
+      polylinesMapRef.current[deviceId] = polyline;
+      gpsPolylinesRef.current.push(polyline);
+    } else {
+      const path = polylinesMapRef.current[deviceId].getPath();
+      path.push(new window.google.maps.LatLng(newPos.lat, newPos.lng));
+    }
+  };
+
   const loadPositionHistory = async (map) => {
     try {
       const res = await fetch("/api/positions-history?hours=24", {
@@ -94,8 +207,10 @@ export default function FieldsPage() {
       const data = await res.json();
       if (!data.success || !map) return;
 
+      // Vider les polylignes existantes
       gpsPolylinesRef.current.forEach((line) => line.setMap(null));
       gpsPolylinesRef.current = [];
+      polylinesMapRef.current = {};
 
       const historyByDevice = data.positions || {};
       for (const deviceId of Object.keys(historyByDevice)) {
@@ -112,7 +227,7 @@ export default function FieldsPage() {
             (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng),
           );
 
-        if (path.length < 2) continue;
+        if (path.length < 1) continue;
 
         const polyline = new window.google.maps.Polyline({
           path,
@@ -123,6 +238,7 @@ export default function FieldsPage() {
           map,
         });
 
+        polylinesMapRef.current[deviceId] = polyline;
         gpsPolylinesRef.current.push(polyline);
       }
     } catch (err) {
@@ -130,12 +246,71 @@ export default function FieldsPage() {
     }
   };
 
+  const buildInfoWindowContent = (deviceId, pos) => {
+    const speedKmh = pos.speed != null ? (pos.speed * 3.6).toFixed(1) : null;
+    const headingStr =
+      pos.heading != null ? `${Number(pos.heading).toFixed(0)}°` : null;
+    const sourceStr = pos.source || "unknown";
+    const accuracyStr =
+      pos.accuracy != null ? `${Number(pos.accuracy).toFixed(2)}m` : null;
+
+    return `
+      <div style="padding:5px;min-width:200px">
+        <strong>Device ID:</strong> ${deviceId}<br/>
+        <strong>Position:</strong> ${parseFloat(pos.latitude).toFixed(6)}, ${parseFloat(pos.longitude).toFixed(6)}<br/>
+        ${pos.altitude != null ? `<strong>Altitude:</strong> ${Number(pos.altitude).toFixed(1)}m<br/>` : ""}
+        ${accuracyStr ? `<strong>Précision:</strong> ${accuracyStr}<br/>` : ""}
+        ${speedKmh ? `<strong>Vitesse:</strong> ${speedKmh} km/h<br/>` : ""}
+        ${headingStr ? `<strong>Cap:</strong> ${headingStr}<br/>` : ""}
+        <strong>Source:</strong> ${sourceStr}<br/>
+        <strong>Mise à jour:</strong> ${new Date(pos.timestamp).toLocaleString("fr-FR")}
+      </div>`;
+  };
+
+  const createMarker = (map, deviceId, position, pos) => {
+    const tractorIcon = document.createElement("img");
+    if (deviceId === "7724") tractorIcon.src = "/assets/tracteur_red.png";
+    else if (deviceId === "6290") tractorIcon.src = "/assets/tracteur.png";
+    else tractorIcon.src = "/assets/tracteur.png";
+    tractorIcon.style.width = "40px";
+    tractorIcon.style.height = "40px";
+    tractorIcon.style.cursor = "pointer";
+
+    const marker = new window.google.maps.marker.AdvancedMarkerElement({
+      position,
+      map,
+      title: `Device: ${deviceId}`,
+      content: tractorIcon,
+    });
+
+    const infoWindow = new window.google.maps.InfoWindow({
+      content: buildInfoWindowContent(deviceId, pos),
+    });
+
+    marker.addListener("click", () => {
+      if (activeInfoWindowRef.current) activeInfoWindowRef.current.close();
+      infoWindow.open(map, marker);
+      activeInfoWindowRef.current = infoWindow;
+      activeDeviceIdRef.current = deviceId;
+    });
+
+    gpsMarkersRef.current.push(marker);
+    markerByDeviceRef.current[deviceId] = marker;
+    infoWindowByDeviceRef.current[deviceId] = infoWindow;
+  };
+
   const loadGPSPositions = async (map, forceRefresh = false) => {
     try {
+      if (yearRef.current !== new Date().getFullYear()) return false;
+
       const res = await fetch("/api/latest-positions", {
         credentials: "include",
       });
       const data = await res.json();
+
+      // Double check in case year changed during fetch
+      if (yearRef.current !== new Date().getFullYear()) return false;
+
       if (!data.success || !map) return false;
 
       const positions = data.positions || {};
@@ -152,84 +327,47 @@ export default function FieldsPage() {
 
       const prevKeys = Object.keys(gpsSignaturesRef.current);
       const nextKeys = Object.keys(nextSignatures);
-      const hasSameKeyCount = prevKeys.length === nextKeys.length;
       const hasChanges =
-        !hasSameKeyCount ||
+        prevKeys.length !== nextKeys.length ||
         nextKeys.some(
           (deviceId) =>
             gpsSignaturesRef.current[deviceId] !== nextSignatures[deviceId],
         );
 
-      if (!hasChanges && !forceRefresh) {
-        return false;
-      }
+      if (!hasChanges && !forceRefresh) return false;
 
       gpsSignaturesRef.current = nextSignatures;
 
-      // Clear old markers
+      // Vider les anciens marqueurs
       gpsMarkersRef.current.forEach((m) => m.setMap(null));
       gpsMarkersRef.current = [];
       markerByDeviceRef.current = {};
       infoWindowByDeviceRef.current = {};
 
       const newGps = {};
-
       for (const deviceId in positions) {
         const pos = positions[deviceId];
-        markerPositionsRef.current[deviceId] = {
+        const position = {
           lat: parseFloat(pos.latitude),
           lng: parseFloat(pos.longitude),
         };
+        markerPositionsRef.current[deviceId] = position;
         newGps[deviceId] = pos;
-
-        const tractorIcon = document.createElement("img");
-        if (deviceId === "7724") tractorIcon.src = "/assets/tracteur_red.png";
-        else if (deviceId === "6290") tractorIcon.src = "/assets/tracteur.png";
-        tractorIcon.style.width = "40px";
-        tractorIcon.style.height = "40px";
-        tractorIcon.style.cursor = "pointer";
-
-        const marker = new window.google.maps.marker.AdvancedMarkerElement({
-          position: markerPositionsRef.current[deviceId],
-          map,
-          title: `Device: ${deviceId}`,
-          content: tractorIcon,
-        });
-
-        const infoWindow = new window.google.maps.InfoWindow({
-          content: `<div style="padding:5px"><strong>Device ID:</strong> ${deviceId}<br/>
-            <strong>Position:</strong> ${parseFloat(pos.latitude).toFixed(6)}, ${parseFloat(pos.longitude).toFixed(6)}<br/>
-            <strong>Last Update:</strong> ${new Date(pos.timestamp).toLocaleString("fr-FR")}</div>`,
-        });
-        marker.addListener("click", () => {
-          if (activeInfoWindowRef.current) {
-            activeInfoWindowRef.current.close();
-          }
-          infoWindow.open(map, marker);
-          activeInfoWindowRef.current = infoWindow;
-          activeDeviceIdRef.current = deviceId;
-        });
-        gpsMarkersRef.current.push(marker);
-        markerByDeviceRef.current[deviceId] = marker;
-        infoWindowByDeviceRef.current[deviceId] = infoWindow;
+        createMarker(map, deviceId, position, pos);
       }
 
+      // Restaurer l'infoWindow active si elle était ouverte
       const activeId = activeDeviceIdRef.current;
       if (
         activeId &&
         markerByDeviceRef.current[activeId] &&
         infoWindowByDeviceRef.current[activeId]
       ) {
-        const marker = markerByDeviceRef.current[activeId];
-        const infoWindow = infoWindowByDeviceRef.current[activeId];
-        if (
-          activeInfoWindowRef.current &&
-          activeInfoWindowRef.current !== infoWindow
-        ) {
-          activeInfoWindowRef.current.close();
-        }
-        infoWindow.open(map, marker);
-        activeInfoWindowRef.current = infoWindow;
+        infoWindowByDeviceRef.current[activeId].open(
+          map,
+          markerByDeviceRef.current[activeId],
+        );
+        activeInfoWindowRef.current = infoWindowByDeviceRef.current[activeId];
       } else if (activeInfoWindowRef.current) {
         activeInfoWindowRef.current.close();
         activeInfoWindowRef.current = null;
@@ -269,7 +407,6 @@ export default function FieldsPage() {
         const dataTab = [];
         let j = 0;
         dataTab[0] = "";
-
         for (let i = 0; i < content.length; i++) {
           if (content[i] === "<") {
             j += 1;
@@ -279,7 +416,6 @@ export default function FieldsPage() {
             dataTab[j] += content[i];
           }
         }
-
         const infos = [];
         let inc = 0;
         for (let i in dataTab) {
@@ -290,6 +426,16 @@ export default function FieldsPage() {
           }
         }
         setMapInfo([infos[0] || "", infos[1] || ""]);
+
+        // Auto-select crop when clicking on a specific field
+        const plainText = content.replace(/<[^>]+>/g, "\n");
+        const mC = plainText.match(/Culture\s*:\s*([^\n]+)/i);
+        if (mC) {
+          const cName = normalizeCultureName(mC[1].trim());
+          if (cName !== "N/A") {
+            setSelectedCrop(cName);
+          }
+        }
       });
 
       window.google.maps.event.addListenerOnce(
@@ -302,36 +448,64 @@ export default function FieldsPage() {
             .then((kmlText) => {
               const kmlDoc = parser.parseFromString(kmlText, "text/xml");
               const placemarks = kmlDoc.getElementsByTagName("Placemark");
+
               let total = 0;
+              let cTotals = {};
+
               for (let i = 0; i < placemarks.length; i++) {
+                let surface = 0;
+                let cultureStr = "";
+
                 const desc =
                   placemarks[i].getElementsByTagName("description")[0];
                 if (desc) {
                   const m = desc.textContent.match(
                     /Surface\s*\(Ha\)\s*:\s*(\d+(\.\d+)?)/,
                   );
-                  if (m) total += parseFloat(m[1]);
+                  if (m) surface = parseFloat(m[1]);
                 }
+
+                const extendedData = placemarks[i].getElementsByTagName("Data");
+                for (let j = 0; j < extendedData.length; j++) {
+                  if (extendedData[j].getAttribute("name") === "Culture") {
+                    const valueTag =
+                      extendedData[j].getElementsByTagName("value")[0];
+                    if (valueTag) cultureStr = valueTag.textContent;
+                  }
+                }
+
+                if (!cultureStr && desc) {
+                  const plainDesc = desc.textContent.replace(/<[^>]+>/g, "\n");
+                  const mC = plainDesc.match(/Culture\s*:\s*([^\n]+)/i);
+                  if (mC) cultureStr = mC[1].trim();
+                }
+
+                const cultureName = normalizeCultureName(cultureStr);
+                cTotals[cultureName] = (cTotals[cultureName] || 0) + surface;
+                total += surface;
               }
               setTotalHa(total.toFixed(2));
+              setCropTotals(cTotals);
             });
         },
       );
 
-      loadGPSPositions(map, true).then((changed) => {
-        if (changed) loadPositionHistory(map);
-      });
-
-      if (gpsPollIntervalRef.current) {
-        clearInterval(gpsPollIntervalRef.current);
+      // ── Chargement initial conditionné à l'année courante ──────────────
+      const isCurrentYear = yearRef.current === new Date().getFullYear();
+      if (isCurrentYear) {
+        loadGPSPositions(map, true).then((changed) => {
+          if (changed) loadPositionHistory(map);
+        });
       }
 
+      // Polling de fallback toutes les 30s
+      if (gpsPollIntervalRef.current) clearInterval(gpsPollIntervalRef.current);
       gpsPollIntervalRef.current = setInterval(async () => {
+        // Ne rien faire si l'année sélectionnée n'est pas l'année courante
+        if (yearRef.current !== new Date().getFullYear()) return;
         const changed = await loadGPSPositions(map);
-        if (changed) {
-          loadPositionHistory(map);
-        }
-      }, 2000);
+        if (changed) loadPositionHistory(map);
+      }, 30000);
     };
 
     if (window.google && window.google.maps) {
@@ -347,9 +521,7 @@ export default function FieldsPage() {
 
   useEffect(() => {
     return () => {
-      if (gpsPollIntervalRef.current) {
-        clearInterval(gpsPollIntervalRef.current);
-      }
+      if (gpsPollIntervalRef.current) clearInterval(gpsPollIntervalRef.current);
       gpsPolylinesRef.current.forEach((line) => line.setMap(null));
     };
   }, []);
@@ -357,14 +529,10 @@ export default function FieldsPage() {
   const centerOnDevice = (deviceId) => {
     if (mapInstanceRef.current && markerPositionsRef.current[deviceId]) {
       mapInstanceRef.current.setCenter(markerPositionsRef.current[deviceId]);
-      //mapInstanceRef.current.setZoom(14);
-
       const marker = markerByDeviceRef.current[deviceId];
       const infoWindow = infoWindowByDeviceRef.current[deviceId];
       if (marker && infoWindow) {
-        if (activeInfoWindowRef.current) {
-          activeInfoWindowRef.current.close();
-        }
+        if (activeInfoWindowRef.current) activeInfoWindowRef.current.close();
         infoWindow.open(mapInstanceRef.current, marker);
         activeInfoWindowRef.current = infoWindow;
         activeDeviceIdRef.current = deviceId;
@@ -372,16 +540,20 @@ export default function FieldsPage() {
     }
   };
 
+  const formatSpeed = (pos) => {
+    if (pos.speed == null) return null;
+    return `${(pos.speed * 3.6).toFixed(1)} km/h`;
+  };
+
   return (
     <div className="fields-page">
       <Nav />
       <div id="mapCap">
-        {/* Legend */}
         <div id="legend">
           <h2>Légende</h2>
           {Object.entries(CROP_COLORS).map(([name, color]) => (
             <div
-              className="lin"
+              className={`lin ${selectedCrop === name ? "selected" : ""}`}
               key={name}
               id={name === "Pdt" ? "pdt" : undefined}
               onMouseEnter={
@@ -390,8 +562,22 @@ export default function FieldsPage() {
               onMouseLeave={
                 name === "Pdt" ? () => setShowPdtInfo(false) : undefined
               }
+              onClick={() =>
+                setSelectedCrop((prev) => (prev === name ? null : name))
+              }
+              style={{
+                cursor: "pointer",
+                fontWeight: selectedCrop === name ? "bold" : "normal",
+                opacity: selectedCrop && selectedCrop !== name ? 0.5 : 1,
+              }}
             >
-              <div style={{ backgroundColor: color }} />
+              <div
+                style={{
+                  backgroundColor: color,
+                  boxSizing: "border-box",
+                  border: selectedCrop === name ? "2px solid white" : "none",
+                }}
+              />
               <p>{name === "Pdt" ? "Pdt*" : name}</p>
             </div>
           ))}
@@ -404,10 +590,8 @@ export default function FieldsPage() {
           )}
         </div>
 
-        {/* Map */}
         <div id="map" ref={mapRef} />
 
-        {/* Info Panel */}
         <div id="infoPanel">
           <div id="capture">
             <h2>Info</h2>
@@ -423,19 +607,56 @@ export default function FieldsPage() {
             <div className="lin">
               <p>Total (Ha) : {totalHa !== null ? totalHa : ""}</p>
             </div>
+            {selectedCrop && (
+              <div className="lin">
+                <p>
+                  {selectedCrop} (Ha) :{" "}
+                  {cropTotals[selectedCrop]
+                    ? cropTotals[selectedCrop].toFixed(2)
+                    : "0.00"}
+                </p>
+              </div>
+            )}
           </div>
           <div id="gpsDevices">
             <h2>GPS</h2>
             <div id="deviceButtons">
-              {Object.keys(gpsPositions).map((id) => (
-                <button
-                  key={id}
-                  className="device-btn"
-                  onClick={() => centerOnDevice(id)}
-                >
-                  📍 {id}
-                </button>
-              ))}
+              {Object.keys(gpsPositions).map((id) => {
+                const pos = gpsPositions[id];
+                const speed = formatSpeed(pos);
+                return (
+                  <button
+                    key={id}
+                    className="device-btn"
+                    onClick={() => centerOnDevice(id)}
+                    title={speed ? `Vitesse: ${speed}` : ""}
+                  >
+                    📍 {id}
+                    {speed && (
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: "0.75em",
+                          opacity: 0.8,
+                        }}
+                      >
+                        {speed}
+                      </span>
+                    )}
+                    {pos.source && (
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: "0.7em",
+                          opacity: 0.65,
+                        }}
+                      >
+                        {pos.source}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

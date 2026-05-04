@@ -14,7 +14,7 @@ const PRODUCT_CATEGORIES = [
   "Autre",
 ];
 
-const PRODUCT_UNITS = ["L", "kg", "g", "ml", "dose"];
+const PRODUCT_UNITS = ["L", "kg", "g", "ml"];
 
 function fmtDate(value) {
   if (!value) return "—";
@@ -49,9 +49,6 @@ function ProductForm({ initial, onSubmit, onCancel }) {
     category: initial?.category || PRODUCT_CATEGORIES[0],
     stock: initial?.stock ?? "",
     unit: initial?.unit || PRODUCT_UNITS[0],
-    dose: initial?.dose || "",
-    phi: initial?.phi ?? "",
-    reentry_hours: initial?.reentry_hours ?? "",
     notes: initial?.notes || "",
   });
 
@@ -105,36 +102,6 @@ function ProductForm({ initial, onSubmit, onCancel }) {
             placeholder="0"
           />
         </div>
-        <div className="pp-form-row">
-          <label>Dose conseillée</label>
-          <input
-            value={form.dose}
-            onChange={set("dose")}
-            placeholder="ex: 0.8 L/ha"
-          />
-        </div>
-      </div>
-      <div className="pp-form-row2">
-        <div className="pp-form-row">
-          <label>DAR (jours)</label>
-          <input
-            type="number"
-            min={0}
-            value={form.phi}
-            onChange={set("phi")}
-            placeholder="21"
-          />
-        </div>
-        <div className="pp-form-row">
-          <label>Rentrée (heures)</label>
-          <input
-            type="number"
-            min={0}
-            value={form.reentry_hours}
-            onChange={set("reentry_hours")}
-            placeholder="6"
-          />
-        </div>
       </div>
       <div className="pp-form-row">
         <label>Notes</label>
@@ -161,117 +128,224 @@ function ProductForm({ initial, onSubmit, onCancel }) {
   );
 }
 
-function ApplicationForm({
-  initial,
-  products,
-  selectedProductId,
-  onSubmit,
-  onCancel,
-}) {
-  const [form, setForm] = useState({
-    date: initial?.date
+function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
+  const [date, setDate] = useState(
+    initial?.date
       ? initial.date.split("T")[0]
       : new Date().toISOString().split("T")[0],
-    parcel: initial?.parcel || "",
-    product_id: String(
-      initial?.product_id || selectedProductId || products[0]?.id || "",
-    ),
-    dose_applied: initial?.dose_applied || "",
-    surface: initial?.surface ?? "",
-    operator: initial?.operator || "",
-    weather: initial?.weather || "",
-    notes: initial?.notes || "",
-  });
+  );
+  const [notes, setNotes] = useState(initial?.notes || "");
+  const [selectedProducts, setSelectedProducts] = useState(
+    initial?.products?.filter((p) => p && p.product_id) || [],
+  );
+  const [errors, setErrors] = useState({});
 
-  const set = (key) => (e) =>
-    setForm((prev) => ({ ...prev, [key]: e.target.value }));
+  const addProduct = () => {
+    if (products.length > 0) {
+      setSelectedProducts([
+        ...selectedProducts,
+        { product_id: products[0].id, quantity_used: "" },
+      ]);
+      setErrors({});
+    }
+  };
+
+  const removeProduct = (index) => {
+    setSelectedProducts(selectedProducts.filter((_, i) => i !== index));
+    setErrors({});
+  };
+
+  const updateProduct = (index, field, value) => {
+    const updated = [...selectedProducts];
+    updated[index] = { ...updated[index], [field]: value };
+    setSelectedProducts(updated);
+    setErrors({});
+  };
+
+  const validateProducts = () => {
+    const newErrors = {};
+
+    selectedProducts.forEach((sp, idx) => {
+      if (!sp.quantity_used) return;
+
+      const product = products.find(
+        (p) => String(p.id) === String(sp.product_id),
+      );
+      const quantity = Number(sp.quantity_used);
+      const availableStock = Number(product?.stock || 0);
+
+      if (quantity > availableStock) {
+        newErrors[idx] =
+          `Stock insuffisant pour ${product?.name}. Disponible: ${availableStock} ${product?.unit}`;
+      }
+    });
+
+    return newErrors;
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (selectedProducts.length === 0) {
+      onAlert?.({
+        type: "error",
+        title: "Produits requis",
+        message: "Ajoute au moins un produit",
+        onClose: () => {},
+      });
+      return;
+    }
+
+    const validationErrors = validateProducts();
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      return;
+    }
+
+    onSubmit({
+      date,
+      notes,
+      products: selectedProducts.map((p) => ({
+        product_id: Number(p.product_id),
+        quantity_used: p.quantity_used ? Number(p.quantity_used) : null,
+      })),
+    });
+  };
 
   return (
-    <form
-      className="pp-form"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSubmit(form);
-      }}
-    >
-      <div className="pp-form-row2">
-        <div className="pp-form-row">
-          <label>Date *</label>
-          <input
-            required
-            type="date"
-            value={form.date}
-            onChange={set("date")}
-          />
-        </div>
-        <div className="pp-form-row">
-          <label>Parcelle *</label>
-          <input
-            required
-            value={form.parcel}
-            onChange={set("parcel")}
-            placeholder="Champ Nord"
-          />
-        </div>
-      </div>
+    <form className="pp-form" onSubmit={handleSubmit}>
       <div className="pp-form-row">
-        <label>Produit *</label>
-        <select required value={form.product_id} onChange={set("product_id")}>
-          {products.map((product) => (
-            <option key={product.id} value={product.id}>
-              {product.name}
-            </option>
-          ))}
-        </select>
+        <label>Date *</label>
+        <input
+          required
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+        />
       </div>
-      <div className="pp-form-row2">
-        <div className="pp-form-row">
-          <label>Dose appliquée</label>
-          <input
-            value={form.dose_applied}
-            onChange={set("dose_applied")}
-            placeholder="0.75 L/ha"
-          />
+
+      <div className="pp-form-row">
+        <label>Produits et doses *</label>
+        <div
+          style={{
+            border: "1px solid #ccc",
+            padding: "10px",
+            borderRadius: "4px",
+            marginBottom: "10px",
+          }}
+        >
+          {selectedProducts.length === 0 ? (
+            <div style={{ color: "#999" }}>Aucun produit sélectionné</div>
+          ) : (
+            selectedProducts.map((sp, idx) => {
+              const productName = products.find(
+                (p) => String(p.id) === String(sp.product_id),
+              )?.name;
+              const productUnit = products.find(
+                (p) => String(p.id) === String(sp.product_id),
+              )?.unit;
+              const hasError = errors[idx];
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    marginBottom:
+                      idx === selectedProducts.length - 1 ? "0" : "8px",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      alignItems: "flex-start",
+                      flexWrap: "wrap",
+                      borderBottom: hasError ? "2px solid #ff4444" : "none",
+                      paddingBottom: hasError ? "8px" : "0",
+                    }}
+                  >
+                    <select
+                      value={sp.product_id}
+                      onChange={(e) =>
+                        updateProduct(idx, "product_id", e.target.value)
+                      }
+                      style={{ flex: "1 1 auto", minWidth: "150px" }}
+                    >
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      placeholder={`Qté (${productUnit || "unit"})`}
+                      min={0}
+                      step="0.1"
+                      value={sp.quantity_used}
+                      onChange={(e) =>
+                        updateProduct(idx, "quantity_used", e.target.value)
+                      }
+                      style={{
+                        flex: "0 1 120px",
+                        borderColor: hasError ? "#ff4444" : "inherit",
+                        boxShadow: hasError
+                          ? "0 0 0 2px rgba(255, 68, 68, 0.1)"
+                          : "none",
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeProduct(idx)}
+                      style={{
+                        padding: "8px 12px",
+                        background: "#ff4444",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "4px",
+                        cursor: "pointer",
+                        flexShrink: 0,
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {hasError && (
+                    <div
+                      style={{
+                        color: "#ff4444",
+                        fontSize: "12px",
+                        marginTop: "4px",
+                        fontWeight: "500",
+                      }}
+                    >
+                      {hasError}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
-        <div className="pp-form-row">
-          <label>Surface (ha)</label>
-          <input
-            type="number"
-            min={0}
-            step="0.01"
-            value={form.surface}
-            onChange={set("surface")}
-            placeholder="8.5"
-          />
-        </div>
+        <button
+          type="button"
+          className="pp-btn pp-btn-ghost"
+          onClick={addProduct}
+          disabled={products.length === 0}
+          style={{ marginTop: "8px" }}
+        >
+          + Ajouter un produit
+        </button>
       </div>
-      <div className="pp-form-row2">
-        <div className="pp-form-row">
-          <label>Opérateur</label>
-          <input
-            value={form.operator}
-            onChange={set("operator")}
-            placeholder="Mathieu"
-          />
-        </div>
-        <div className="pp-form-row">
-          <label>Météo</label>
-          <input
-            value={form.weather}
-            onChange={set("weather")}
-            placeholder="Sec, vent faible"
-          />
-        </div>
-      </div>
+
       <div className="pp-form-row">
         <label>Notes</label>
         <textarea
           rows={3}
-          value={form.notes}
-          onChange={set("notes")}
-          placeholder="Mélange, stade culture, remarques..."
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Notes sur l'intervention..."
         />
       </div>
+
       <div className="pp-form-actions">
         <button
           type="button"
@@ -292,10 +366,15 @@ export default function PhytoPage() {
   const { csrfToken, refreshCsrfToken } = useAuth();
   const [products, setProducts] = useState([]);
   const [applications, setApplications] = useState([]);
-  const [selectedProduct, setSelectedProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
+  const [searchProducts, setSearchProducts] = useState("");
+  const [searchApplications, setSearchApplications] = useState("");
+  const [deleteContext, setDeleteContext] = useState(null);
+  const [sortProductsBy, setSortProductsBy] = useState("name");
+  const [filterApplicationsYear, setFilterApplicationsYear] = useState("");
+  const [alertContext, setAlertContext] = useState(null);
 
   usePageMeta("Phyto", "/assets/icons8-champ-32.png");
 
@@ -347,10 +426,16 @@ export default function PhytoPage() {
           }
         }
         const retryRes = await fetch(url, retryOptions);
-        if (!retryRes.ok) throw new Error(`HTTP ${retryRes.status}`);
+        if (!retryRes.ok) {
+          const errorData = await retryRes.json().catch(() => ({}));
+          throw new Error(errorData.message || `HTTP ${retryRes.status}`);
+        }
         return retryRes.json();
       }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${res.status}`);
+      }
       return res.json();
     },
     [csrfToken, refreshCsrfToken],
@@ -364,7 +449,17 @@ export default function PhytoPage() {
         apiFetch("/api/phyto/applications"),
       ]);
       setProducts(productsData);
-      setApplications(applicationsData);
+
+      // Normaliser les applications : s'assurer que products est toujours un array
+      const normalizedApplications = (applicationsData || []).map((app) => ({
+        ...app,
+        products: Array.isArray(app.products)
+          ? app.products
+          : typeof app.products === "string"
+            ? JSON.parse(app.products)
+            : [],
+      }));
+      setApplications(normalizedApplications);
     } catch (error) {
       console.error("Erreur chargement phyto:", error);
     } finally {
@@ -376,51 +471,13 @@ export default function PhytoPage() {
     loadData();
   }, [loadData]);
 
-  useEffect(() => {
-    if (!selectedProduct) return;
-    const stillExists = products.find(
-      (product) => product.id === selectedProduct.id,
-    );
-    if (!stillExists) {
-      setSelectedProduct(null);
-    } else if (stillExists !== selectedProduct) {
-      setSelectedProduct(stillExists);
-    }
-  }, [products, selectedProduct]);
-
-  const filteredApplications = useMemo(() => {
-    if (!selectedProduct) return applications;
-    return applications.filter(
-      (application) =>
-        Number(application.product_id) === Number(selectedProduct.id),
-    );
-  }, [applications, selectedProduct]);
-
   const stats = useMemo(() => {
     const lowStockCount = products.filter(
       (product) =>
         Number(product.stock || 0) > 0 && Number(product.stock || 0) <= 5,
     ).length;
-    const totalSurface = applications.reduce(
-      (sum, application) => sum + Number(application.surface || 0),
-      0,
-    );
-    const month = new Date().getMonth();
-    const year = new Date().getFullYear();
-    const thisMonthCount = applications.filter((application) => {
-      const d = new Date(application.date);
-      return d.getMonth() === month && d.getFullYear() === year;
-    }).length;
-    return { lowStockCount, totalSurface, thisMonthCount };
-  }, [products, applications]);
-
-  const productNameById = useMemo(
-    () =>
-      Object.fromEntries(
-        products.map((product) => [String(product.id), product.name]),
-      ),
-    [products],
-  );
+    return { lowStockCount };
+  }, [products]);
 
   const createProduct = async (payload) => {
     await apiFetch("/api/phyto/products", {
@@ -442,48 +499,161 @@ export default function PhytoPage() {
   };
 
   const deleteProduct = async (product) => {
-    if (
-      !confirm(
-        `Supprimer le produit "${product.name}" et ses interventions associées ?`,
-      )
-    ) {
-      return;
-    }
-    await apiFetch(`/api/phyto/products/${product.id}`, { method: "DELETE" });
-    if (selectedProduct?.id === product.id) setSelectedProduct(null);
-    await loadData();
+    setAlertContext({
+      type: "confirm",
+      title: "Supprimer le produit",
+      message: `Supprimer le produit "${product.name}" et ses interventions associées ?`,
+      onConfirm: async () => {
+        await apiFetch(`/api/phyto/products/${product.id}`, {
+          method: "DELETE",
+        });
+        await loadData();
+        setAlertContext(null);
+      },
+      onCancel: () => setAlertContext(null),
+    });
   };
 
   const createApplication = async (payload) => {
-    await apiFetch("/api/phyto/applications", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    setModal(null);
-    await loadData();
+    try {
+      await apiFetch("/api/phyto/applications", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setModal(null);
+      await loadData();
+    } catch (error) {
+      const errorMsg =
+        error.message || "Erreur lors de la création de l'intervention";
+      setAlertContext({
+        type: "error",
+        title: "Erreur",
+        message: errorMsg,
+        onClose: () => setAlertContext(null),
+      });
+    }
   };
 
   const updateApplication = async (payload) => {
-    await apiFetch(`/api/phyto/applications/${editTarget.id}`, {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    });
-    setModal(null);
-    setEditTarget(null);
-    await loadData();
+    try {
+      await apiFetch(`/api/phyto/applications/${editTarget.id}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      setModal(null);
+      setEditTarget(null);
+      await loadData();
+    } catch (error) {
+      const errorMsg =
+        error.message || "Erreur lors de la mise à jour de l'intervention";
+      setAlertContext({
+        type: "error",
+        title: "Erreur",
+        message: errorMsg,
+        onClose: () => setAlertContext(null),
+      });
+    }
   };
 
   const deleteApplication = async (application) => {
-    if (
-      !confirm(`Supprimer l'intervention du ${fmtDate(application.date)} ?`)
-    ) {
-      return;
-    }
-    await apiFetch(`/api/phyto/applications/${application.id}`, {
-      method: "DELETE",
+    setDeleteContext({
+      id: application.id,
+      date: application.date,
+      pending: true,
     });
-    await loadData();
   };
+
+  const confirmDeleteApplication = async (restoreStock) => {
+    const { id } = deleteContext;
+    try {
+      await apiFetch(
+        `/api/phyto/applications/${id}?restoreStock=${restoreStock}`,
+        {
+          method: "DELETE",
+        },
+      );
+      setDeleteContext(null);
+      await loadData();
+    } catch (error) {
+      const errorMsg = error.message || "Erreur lors de la suppression";
+      setAlertContext({
+        type: "error",
+        title: "Erreur",
+        message: errorMsg,
+        onClose: () => {
+          setAlertContext(null);
+          setDeleteContext(null);
+        },
+      });
+    }
+  };
+
+  const filteredProducts = useMemo(() => {
+    let filtered = products;
+
+    if (searchProducts.trim()) {
+      const query = searchProducts.toLowerCase();
+      filtered = filtered.filter(
+        (p) =>
+          p.name.toLowerCase().includes(query) ||
+          p.category.toLowerCase().includes(query),
+      );
+    }
+
+    const sorted = [...filtered];
+    if (sortProductsBy === "category") {
+      sorted.sort((a, b) => {
+        const catA = (a.category || "").toLowerCase();
+        const catB = (b.category || "").toLowerCase();
+        if (catA !== catB) return catA.localeCompare(catB);
+        return (a.name || "").localeCompare(b.name || "");
+      });
+    } else {
+      sorted.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    }
+
+    return sorted;
+  }, [products, searchProducts, sortProductsBy]);
+
+  const availableYears = useMemo(() => {
+    const years = new Set(
+      applications.map((app) => new Date(app.date).getFullYear()),
+    );
+    return Array.from(years).sort((a, b) => b - a);
+  }, [applications]);
+
+  const filteredApplications = useMemo(() => {
+    let filtered = applications;
+
+    if (searchApplications.trim()) {
+      const query = searchApplications.toLowerCase();
+      filtered = filtered.filter((app) => {
+        const dateStr = fmtDate(app.date).toLowerCase();
+        const productNames = app.products
+          ?.map((p) => p.product_name?.toLowerCase() || "")
+          .join(" ");
+        const notes = app.notes?.toLowerCase() || "";
+        return (
+          dateStr.includes(query) ||
+          productNames.includes(query) ||
+          notes.includes(query)
+        );
+      });
+    }
+
+    if (filterApplicationsYear) {
+      filtered = filtered.filter((app) => {
+        const year = new Date(app.date).getFullYear();
+        return year === Number(filterApplicationsYear);
+      });
+    }
+
+    const sorted = [...filtered].sort(
+      (a, b) => new Date(b.date) - new Date(a.date),
+    );
+
+    return sorted;
+  }, [applications, searchApplications, filterApplicationsYear]);
 
   return (
     <>
@@ -498,14 +668,6 @@ export default function PhytoPage() {
             <span className="pp-summary-label">Alertes stock</span>
             <strong>{stats.lowStockCount}</strong>
           </div>
-          <div className="pp-summary-card">
-            <span className="pp-summary-label">Interventions du mois</span>
-            <strong>{stats.thisMonthCount}</strong>
-          </div>
-          <div className="pp-summary-card">
-            <span className="pp-summary-label">Surface traitée</span>
-            <strong>{stats.totalSurface.toFixed(1)} ha</strong>
-          </div>
         </div>
 
         <div className="pp-layout">
@@ -513,9 +675,7 @@ export default function PhytoPage() {
             <div className="pp-panel-header">
               <div>
                 <h2>Produits phyto</h2>
-                <span className="pp-panel-subtitle">
-                  Stock, DAR, rentrée et notes
-                </span>
+                <span className="pp-panel-subtitle">Stock et notes</span>
               </div>
               <button
                 className="pp-btn pp-btn-primary"
@@ -525,25 +685,63 @@ export default function PhytoPage() {
               </button>
             </div>
 
+            {!loading && products.length > 0 && (
+              <div
+                style={{
+                  padding: "10px",
+                  marginBottom: "10px",
+                  display: "flex",
+                  gap: "8px",
+                }}
+              >
+                <input
+                  type="text"
+                  placeholder="Chercher un produit..."
+                  value={searchProducts}
+                  onChange={(e) => setSearchProducts(e.target.value)}
+                  style={{
+                    flex: 1,
+                    padding: "8px",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    boxSizing: "border-box",
+                  }}
+                />
+                <select
+                  value={sortProductsBy}
+                  onChange={(e) => setSortProductsBy(e.target.value)}
+                  style={{
+                    padding: "8px",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    backgroundColor: "white",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="name">Trier: Nom</option>
+                  <option value="category">Trier: Catégorie</option>
+                </select>
+              </div>
+            )}
+
             {loading ? (
               <div className="pp-empty">Chargement…</div>
             ) : products.length === 0 ? (
               <div className="pp-empty">Aucun produit enregistré.</div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="pp-empty">
+                Aucun produit ne correspond à la recherche.
+              </div>
             ) : (
               <div className="pp-product-list">
-                {products.map((product) => {
-                  const selected = selectedProduct?.id === product.id;
+                {filteredProducts.map((product) => {
                   const lowStock =
                     Number(product.stock || 0) > 0 &&
                     Number(product.stock || 0) <= 5;
                   return (
-                    <article
-                      key={product.id}
-                      className={`pp-product-card ${selected ? "pp-product-card-active" : ""}`}
-                      onClick={() =>
-                        setSelectedProduct(selected ? null : product)
-                      }
-                    >
+                    <article key={product.id} className="pp-product-card">
                       <div className="pp-product-card-top">
                         <div>
                           <div className="pp-product-name">{product.name}</div>
@@ -551,11 +749,6 @@ export default function PhytoPage() {
                             <span className={categoryClass(product.category)}>
                               {product.category}
                             </span>
-                            {product.dose && (
-                              <span className="pp-inline-meta">
-                                Dose: {product.dose}
-                              </span>
-                            )}
                           </div>
                         </div>
                         <div
@@ -585,10 +778,6 @@ export default function PhytoPage() {
                         <span>
                           Stock: {product.stock || 0} {product.unit || ""}
                         </span>
-                        {product.phi ? <span>DAR: {product.phi} j</span> : null}
-                        {product.reentry_hours ? (
-                          <span>Rentrée: {product.reentry_hours} h</span>
-                        ) : null}
                       </div>
                       {lowStock && (
                         <div className="pp-alert pp-alert-warning">
@@ -610,20 +799,10 @@ export default function PhytoPage() {
               <div>
                 <h2>Interventions</h2>
                 <span className="pp-panel-subtitle">
-                  {selectedProduct
-                    ? `Filtré sur ${selectedProduct.name}`
-                    : "Historique de tous les traitements"}
+                  Historique de tous les traitements
                 </span>
               </div>
               <div className="pp-header-actions">
-                {selectedProduct ? (
-                  <button
-                    className="pp-btn pp-btn-ghost"
-                    onClick={() => setSelectedProduct(null)}
-                  >
-                    Réinitialiser
-                  </button>
-                ) : null}
                 <button
                   className="pp-btn pp-btn-primary"
                   onClick={() => setModal("add-application")}
@@ -634,15 +813,64 @@ export default function PhytoPage() {
               </div>
             </div>
 
+            {!loading && applications.length > 0 && (
+              <div
+                style={{
+                  padding: "10px",
+                  marginBottom: "10px",
+                  display: "flex",
+                  gap: "8px",
+                }}
+              >
+                <input
+                  type="text"
+                  placeholder="Chercher une intervention..."
+                  value={searchApplications}
+                  onChange={(e) => setSearchApplications(e.target.value)}
+                  style={{
+                    flex: 1,
+                    padding: "8px",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    boxSizing: "border-box",
+                  }}
+                />
+                <select
+                  value={filterApplicationsYear}
+                  onChange={(e) => setFilterApplicationsYear(e.target.value)}
+                  style={{
+                    padding: "8px",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    backgroundColor: "white",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="">Toutes les années</option>
+                  {availableYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {products.length === 0 ? (
               <div className="pp-empty pp-empty-center">
                 Ajoute d'abord un produit pour enregistrer une intervention.
               </div>
             ) : loading ? (
               <div className="pp-empty">Chargement…</div>
-            ) : filteredApplications.length === 0 ? (
+            ) : applications.length === 0 ? (
               <div className="pp-empty pp-empty-center">
                 Aucune intervention enregistrée.
+              </div>
+            ) : filteredApplications.length === 0 ? (
+              <div className="pp-empty pp-empty-center">
+                Aucune intervention ne correspond à la recherche.
               </div>
             ) : (
               <div className="pp-application-list">
@@ -651,17 +879,19 @@ export default function PhytoPage() {
                     <div className="pp-application-top">
                       <div>
                         <div className="pp-application-title">
-                          {application.parcel}
+                          {fmtDate(application.date)}
                         </div>
                         <div className="pp-product-meta-row">
-                          <span className="pp-badge pp-badge-neutral">
-                            {productNameById[String(application.product_id)] ||
-                              "Produit supprimé"}
-                          </span>
-                          <span>{fmtDate(application.date)}</span>
-                          {application.surface ? (
-                            <span>{application.surface} ha</span>
-                          ) : null}
+                          {application.products
+                            ?.filter((p) => p && p.product_id)
+                            .map((p, idx) => (
+                              <span
+                                key={idx}
+                                className="pp-badge pp-badge-neutral"
+                              >
+                                {p.product_name || "Produit supprimé"}
+                              </span>
+                            ))}
                         </div>
                       </div>
                       <div className="pp-card-actions">
@@ -684,17 +914,13 @@ export default function PhytoPage() {
                         </button>
                       </div>
                     </div>
-                    <div className="pp-product-meta-row">
-                      {application.dose_applied ? (
-                        <span>Dose: {application.dose_applied}</span>
-                      ) : null}
-                      {application.operator ? (
-                        <span>Opérateur: {application.operator}</span>
-                      ) : null}
-                      {application.weather ? (
-                        <span>Météo: {application.weather}</span>
-                      ) : null}
-                    </div>
+                    {application.products
+                      ?.filter((p) => p && p.product_id)
+                      .map((p, idx) => (
+                        <div key={idx} className="pp-product-meta-row">
+                          <span>{p.product_name}</span>
+                        </div>
+                      ))}
                     {application.notes ? (
                       <div className="pp-notes">{application.notes}</div>
                     ) : null}
@@ -705,6 +931,47 @@ export default function PhytoPage() {
           </section>
         </div>
       </div>
+
+      {deleteContext?.pending && (
+        <Modal
+          title="Supprimer l'intervention"
+          onClose={() => setDeleteContext(null)}
+        >
+          <div style={{ padding: "20px" }}>
+            <p style={{ marginBottom: "20px", fontSize: "14px" }}>
+              Voulez-vous rétablir le stock des produits utilisés dans
+              l'intervention du <strong>{fmtDate(deleteContext.date)}</strong> ?
+            </p>
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                className="pp-btn pp-btn-ghost"
+                onClick={() => setDeleteContext(null)}
+              >
+                Annuler
+              </button>
+              <button
+                className="pp-btn pp-btn-ghost"
+                style={{ color: "#ff9800" }}
+                onClick={() => confirmDeleteApplication(false)}
+              >
+                Non, garder la déduction
+              </button>
+              <button
+                className="pp-btn pp-btn-primary"
+                onClick={() => confirmDeleteApplication(true)}
+              >
+                Oui, rétablir le stock
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {modal === "add-product" ? (
         <Modal title="Ajouter un produit phyto" onClose={() => setModal(null)}>
@@ -729,9 +996,9 @@ export default function PhytoPage() {
         <Modal title="Ajouter une intervention" onClose={() => setModal(null)}>
           <ApplicationForm
             products={products}
-            selectedProductId={selectedProduct?.id}
             onSubmit={createApplication}
             onCancel={() => setModal(null)}
+            onAlert={setAlertContext}
           />
         </Modal>
       ) : null}
@@ -741,12 +1008,64 @@ export default function PhytoPage() {
           <ApplicationForm
             initial={editTarget}
             products={products}
-            selectedProductId={selectedProduct?.id}
             onSubmit={updateApplication}
             onCancel={() => setModal(null)}
+            onAlert={setAlertContext}
           />
         </Modal>
       ) : null}
+
+      {alertContext?.type === "error" && (
+        <Modal
+          title={alertContext.title || "Erreur"}
+          onClose={alertContext.onClose}
+        >
+          <div style={{ padding: "20px", textAlign: "center" }}>
+            <p style={{ marginBottom: "20px", fontSize: "14px" }}>
+              {alertContext.message}
+            </p>
+            <button
+              className="pp-btn pp-btn-primary"
+              onClick={alertContext.onClose}
+            >
+              Fermer
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {alertContext?.type === "confirm" && (
+        <Modal
+          title={alertContext.title || "Confirmation"}
+          onClose={alertContext.onCancel}
+        >
+          <div style={{ padding: "20px" }}>
+            <p style={{ marginBottom: "20px", fontSize: "14px" }}>
+              {alertContext.message}
+            </p>
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                className="pp-btn pp-btn-ghost"
+                onClick={alertContext.onCancel}
+              >
+                Annuler
+              </button>
+              <button
+                className="pp-btn pp-btn-primary"
+                onClick={alertContext.onConfirm}
+              >
+                Confirmer
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }
