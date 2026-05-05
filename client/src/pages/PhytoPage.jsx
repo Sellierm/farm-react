@@ -354,7 +354,6 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
 }
 
 export default function PhytoPage() {
-  // ✅ Hook partagé — remplace l'implémentation locale dupliquée
   const apiFetch = useApiFetch();
 
   const [products, setProducts] = useState([]);
@@ -548,6 +547,36 @@ export default function PhytoPage() {
     }
   };
 
+  const handleExportProductsCsv = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch("/api/phyto/products/export", {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const today = new Date().toISOString().split("T")[0];
+      a.download = `phyto_produits_${today}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setAlertContext({
+        type: "error",
+        title: "Erreur export",
+        message: "Impossible de générer le fichier CSV.",
+        onClose: () => setAlertContext(null),
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // ─── Filtres / tri ───────────────────────────────────────────
 
   const filteredProducts = useMemo(() => {
@@ -632,12 +661,24 @@ export default function PhytoPage() {
                 <h2>Produits phyto</h2>
                 <span className="pp-panel-subtitle">Stock et notes</span>
               </div>
-              <button
-                className="pp-btn pp-btn-primary"
-                onClick={() => setModal("add-product")}
-              >
-                + Produit
-              </button>
+              <div style={{ display: "flex", gap: "8px" }}>
+                {!loading && products.length > 0 && (
+                  <button
+                    className="pp-btn pp-btn-ghost"
+                    onClick={handleExportProductsCsv}
+                    disabled={exporting}
+                    title="Exporter en CSV"
+                  >
+                    {exporting ? "Export…" : "⬇ CSV"}
+                  </button>
+                )}
+                <button
+                  className="pp-btn pp-btn-primary"
+                  onClick={() => setModal("add-product")}
+                >
+                  + Produit
+                </button>
+              </div>
             </div>
 
             {!loading && products.length > 0 && (

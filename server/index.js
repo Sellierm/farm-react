@@ -48,7 +48,6 @@ if (!process.env.SESSION_SECRET) {
   console.warn("[WARN] SESSION_SECRET manquant. Secret temporaire généré.");
 }
 
-// ✅ Pool MySQL avec promise API
 const pool = mysql.createPool({
   host: bd.host,
   user: bd.user,
@@ -358,7 +357,6 @@ app.post("/api/auth", authLimiter, async (req, res) => {
   authLog(clientIp, "INFO", `Tentative de connexion : "${username}"`);
 
   try {
-    // ✅ async/await — plus de callback imbriqué
     const [results] = await pool.execute(
       "SELECT password FROM user WHERE name = ?",
       [username],
@@ -558,11 +556,9 @@ app.post("/api/location", locationLimiter, (req, res) => {
       heading: heading !== undefined ? heading : null,
     };
 
-    // ✅ WebSocket et réponse HTTP immédiats — avant tout I/O
     io.emit("location_update", newPoint);
     res.status(200).json({ success: true });
 
-    // ✅ Mise à jour mémoire (pas de disque)
     positionsMemory[deviceId] = newPoint;
     dirtyPositions = true;
 
@@ -860,7 +856,6 @@ app.get("/api/phyto/applications", authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Transaction : insert application + produits + décrémentation stock atomiques
 app.post("/api/phyto/applications", authMiddleware, async (req, res) => {
   const { date, notes, products } = req.body;
 
@@ -934,13 +929,11 @@ app.post("/api/phyto/applications", authMiddleware, async (req, res) => {
     }
 
     await conn.commit();
-    res
-      .status(201)
-      .json({
-        success: true,
-        id: applicationId,
-        message: "Application created",
-      });
+    res.status(201).json({
+      success: true,
+      id: applicationId,
+      message: "Application created",
+    });
   } catch (err) {
     await conn.rollback();
     console.error("Error creating application:", err);
@@ -952,7 +945,6 @@ app.post("/api/phyto/applications", authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Transaction : restauration ancien stock + insert nouveaux produits + décrémentation
 app.put("/api/phyto/applications/:id", authMiddleware, async (req, res) => {
   const { id } = req.params;
   const { date, notes, products } = req.body;
@@ -1028,7 +1020,6 @@ app.put("/api/phyto/applications/:id", authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Transaction : suppression + restauration stock optionnelle
 app.delete("/api/phyto/applications/:id", authMiddleware, async (req, res) => {
   const { id } = req.params;
   const restoreStock = req.query.restoreStock === "true";
@@ -1121,6 +1112,42 @@ app.get("/api/phyto/export", authMiddleware, async (req, res) => {
     res.send(csvContent);
   } catch (err) {
     console.error("Erreur export CSV:", err);
+    res
+      .status(500)
+      .json({ success: false, message: "Erreur lors de l'export" });
+  }
+});
+
+app.get("/api/phyto/products/export", authMiddleware, async (req, res) => {
+  try {
+    const [products] = await pool.execute(
+      "SELECT id, name, category, stock, unit, notes FROM phyto_products ORDER BY category ASC, name ASC",
+    );
+
+    // En-tête CSV
+    const BOM = "\uFEFF"; // BOM UTF-8 pour compatibilité Excel
+    const headers = ["Produit", "Catégorie", "Stock", "Unité", "Notes"];
+
+    const rows = products.map((row) => [
+      row.name || "",
+      row.category || "",
+      String(row.stock || 0).replace(".", ","),
+      row.unit || "",
+      row.notes ? `"${String(row.notes).replace(/"/g, '""')}"` : "",
+    ]);
+
+    const csvContent =
+      BOM + [headers.join(";"), ...rows.map((r) => r.join(";"))].join("\r\n");
+
+    const today = new Date().toISOString().split("T")[0];
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="phyto_produits_${today}.csv"`,
+    );
+    res.send(csvContent);
+  } catch (err) {
+    console.error("Erreur export CSV produits:", err);
     res
       .status(500)
       .json({ success: false, message: "Erreur lors de l'export" });
