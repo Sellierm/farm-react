@@ -482,11 +482,69 @@ function writeJsonFileSafe(filePath, data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
 }
 
+// ── In-memory store (remplace les lectures disque à chaque requête) ──────────
+let positionsMemory = {}; // latest positions
+let historyMemory = {}; // 24h history
+let memoryLoaded = false;
+let dirtyPositions = false;
+let dirtyHistory = false;
+
+// Charger une fois au démarrage
+function loadMemoryFromDisk() {
+  const locationsFilePath = path.join(__dirname, "latest_positions.json");
+  const historyFilePath = path.join(__dirname, "location_history.json");
+  positionsMemory = readJsonFileSafe(locationsFilePath, {});
+  historyMemory = readJsonFileSafe(historyFilePath, {});
+  memoryLoaded = true;
+  console.log("[GPS] Mémoire chargée depuis disque");
+}
+
+function startDiskPersistence() {
+  setInterval(() => {
+    if (dirtyPositions) {
+      const locationsFilePath = path.join(__dirname, "latest_positions.json");
+      fs.writeFile(
+        locationsFilePath,
+        JSON.stringify(positionsMemory, null, 2),
+        "utf8",
+        (err) => {
+          if (err)
+            console.error("[GPS] Erreur écriture positions:", err.message);
+        },
+      );
+      dirtyPositions = false;
+    }
+
+    if (dirtyHistory) {
+      const historyFilePath = path.join(__dirname, "location_history.json");
+      // Nettoyage 24h avant d'écrire
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+      for (const deviceId of Object.keys(historyMemory)) {
+        historyMemory[deviceId] = (historyMemory[deviceId] || []).filter(
+          (point) => {
+            const t = new Date(point.timestamp).getTime();
+            return Number.isFinite(t) && t >= cutoff;
+          },
+        );
+      }
+      fs.writeFile(
+        historyFilePath,
+        JSON.stringify(historyMemory, null, 2),
+        "utf8",
+        (err) => {
+          if (err)
+            console.error("[GPS] Erreur écriture historique:", err.message);
+        },
+      );
+      dirtyHistory = false;
+    }
+  }, 10_000); // écriture disque toutes les 10s seulement
+}
+
+loadMemoryFromDisk();
+startDiskPersistence();
 app.post("/api/location", locationLimiter, function (req, res) {
   try {
-    console.log("[LOCATION] Requête reçue de:", req.ip);
-    console.log("[LOCATION] Body brut:", JSON.stringify(req.body));
-
     const {
       latitude,
       longitude,
@@ -500,8 +558,8 @@ app.post("/api/location", locationLimiter, function (req, res) {
       heading,
     } = req.body;
 
+    // Validation clé
     if (!GPS_INGEST_KEY) {
-      console.error("[LOCATION] GPS_INGEST_KEY non configuree");
       return res
         .status(500)
         .json({ success: false, message: "GPS_INGEST_KEY is not configured" });
@@ -517,21 +575,12 @@ app.post("/api/location", locationLimiter, function (req, res) {
       crypto.timingSafeEqual(keyBuf, expectedBuf);
 
     if (!keyValid || !GPS_ALLOWED_IDS.includes(String(id))) {
-      console.warn("[LOCATION] Acces refuse - id:", id);
       return res
         .status(401)
         .json({ success: false, message: "Unauthorized: invalid payload" });
     }
 
     if (latitude === undefined || longitude === undefined || !timestamp) {
-      console.warn(
-        "[LOCATION] Champs manquants - lat:",
-        latitude,
-        "lon:",
-        longitude,
-        "ts:",
-        timestamp,
-      );
       return res
         .status(400)
         .json({ success: false, message: "Missing required fields" });
@@ -543,22 +592,12 @@ app.post("/api/location", locationLimiter, function (req, res) {
       longitude < -180 ||
       longitude > 180
     ) {
-      console.warn(
-        "[LOCATION] Coordonnees invalides - lat:",
-        latitude,
-        "lon:",
-        longitude,
-      );
       return res
         .status(400)
         .json({ success: false, message: "Invalid coordinates" });
     }
 
     const deviceId = String(id || "0");
-    const locationsFilePath = path.join(__dirname, "latest_positions.json");
-    const historyFilePath = path.join(__dirname, "location_history.json");
-
-    const positionsMap = readJsonFileSafe(locationsFilePath, {});
 
     const newPoint = {
       latitude,
@@ -573,12 +612,14 @@ app.post("/api/location", locationLimiter, function (req, res) {
       heading: heading !== undefined ? heading : null,
     };
 
-    positionsMap[deviceId] = newPoint;
+    io.emit("location_update", newPoint);
+    res.status(200).json({ success: true });
 
-    const historyMap = readJsonFileSafe(historyFilePath, {});
-    if (!Array.isArray(historyMap[deviceId])) historyMap[deviceId] = [];
+    positionsMemory[deviceId] = newPoint;
+    dirtyPositions = true;
 
-    const history = historyMap[deviceId];
+    if (!Array.isArray(historyMemory[deviceId])) historyMemory[deviceId] = [];
+    const history = historyMemory[deviceId];
     const last = history.length ? history[history.length - 1] : null;
     const isDuplicate =
       last &&
@@ -588,99 +629,42 @@ app.post("/api/location", locationLimiter, function (req, res) {
 
     if (!isDuplicate) {
       history.push(newPoint);
+      dirtyHistory = true;
     }
 
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-    historyMap[deviceId] = history.filter((point) => {
-      const t = new Date(point.timestamp).getTime();
-      return Number.isFinite(t) && t >= cutoff;
-    });
-
-    try {
-      writeJsonFileSafe(locationsFilePath, positionsMap);
-      writeJsonFileSafe(historyFilePath, historyMap);
-      console.log(
-        "[LOCATION] Ecrit avec succes - device:",
-        deviceId,
-        "| source:",
-        source,
-        "| lat:",
-        latitude,
-        "| lon:",
-        longitude,
-      );
-    } catch (err) {
-      console.error("[LOCATION] Erreur ecriture fichier:", err.message);
-      return res
-        .status(500)
-        .json({ success: false, message: "File write error" });
-    }
-
-    // Pousser en temps réel vers tous les clients WebSocket authentifiés
-    io.emit("location_update", newPoint);
-
-    return res.status(200).json({ success: true });
+    console.log(
+      `[LOCATION] device:${deviceId} | source:${source} | lat:${latitude} | lon:${longitude}`,
+    );
   } catch (error) {
     console.error("[LOCATION] Erreur interne:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Internal server error" });
+    if (!res.headersSent) {
+      res
+        .status(500)
+        .json({ success: false, message: "Internal server error" });
+    }
   }
+});
+
+app.get("/api/latest-positions", authMiddleware, function (req, res) {
+  return res.status(200).json({ success: true, positions: positionsMemory });
 });
 
 app.get("/api/positions-history", authMiddleware, function (req, res) {
-  try {
-    const requestedHours = Number(req.query.hours);
-    const hours =
-      Number.isFinite(requestedHours) && requestedHours > 0
-        ? Math.min(requestedHours, 168)
-        : 24;
+  const requestedHours = Number(req.query.hours);
+  const hours =
+    Number.isFinite(requestedHours) && requestedHours > 0
+      ? Math.min(requestedHours, 168)
+      : 24;
 
-    const historyFilePath = path.join(__dirname, "location_history.json");
-    const historyMap = readJsonFileSafe(historyFilePath, {});
-    const cutoff = Date.now() - hours * 60 * 60 * 1000;
-
-    const filtered = {};
-    for (const deviceId of Object.keys(historyMap)) {
-      const series = Array.isArray(historyMap[deviceId])
-        ? historyMap[deviceId]
-        : [];
-      filtered[deviceId] = series.filter((point) => {
-        const t = new Date(point.timestamp).getTime();
-        return Number.isFinite(t) && t >= cutoff;
-      });
-    }
-
-    return res.status(200).json({ success: true, positions: filtered, hours });
-  } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, message: "Error reading positions history" });
+  const cutoff = Date.now() - hours * 60 * 60 * 1000;
+  const filtered = {};
+  for (const deviceId of Object.keys(historyMemory)) {
+    filtered[deviceId] = (historyMemory[deviceId] || []).filter((point) => {
+      const t = new Date(point.timestamp).getTime();
+      return Number.isFinite(t) && t >= cutoff;
+    });
   }
-});
-
-// ── Latest GPS Positions ───────────────────────────────────────────────────────
-app.get("/api/latest-positions", authMiddleware, function (req, res) {
-  try {
-    const locationsFilePath = path.join(__dirname, "latest_positions.json");
-    if (fs.existsSync(locationsFilePath)) {
-      const fileContent = fs.readFileSync(locationsFilePath, "utf8");
-      let positionsMap = {};
-      try {
-        positionsMap = JSON.parse(fileContent) || {};
-      } catch (e) {
-        return res
-          .status(500)
-          .json({ success: false, message: "JSON parse error" });
-      }
-      return res.status(200).json({ success: true, positions: positionsMap });
-    }
-    return res.status(200).json({ success: true, positions: {} });
-  } catch (error) {
-    return res
-      .status(500)
-      .json({ success: false, message: "Error reading positions" });
-  }
+  return res.status(200).json({ success: true, positions: filtered, hours });
 });
 
 const fetchSencropData = async (url) => {
