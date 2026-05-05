@@ -41,6 +41,7 @@ export default function GpsPage() {
     lng: new KalmanFilter(),
   });
   const watchIdRef = useRef(null);
+  const mapIntervalRef = useRef(null);
 
   usePageMeta("Gps", "/assets/icons8-gps-32.png");
 
@@ -62,8 +63,14 @@ export default function GpsPage() {
       { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 },
     );
     return () => {
-      if (watchIdRef.current !== null)
+      if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      if (mapIntervalRef.current !== null) {
+        clearInterval(mapIntervalRef.current);
+        mapIntervalRef.current = null;
+      }
     };
   }, []);
 
@@ -104,10 +111,6 @@ export default function GpsPage() {
         mapTypeId: "satellite",
       });
 
-      // Init sensor fusion
-      window.addEventListener("devicemotion", () => {});
-      window.addEventListener("deviceorientation", () => {});
-
       const headingAB = window.google.maps.geometry.spherical.computeHeading(
         { lat: latA, lng: lngA },
         { lat: latB, lng: lngB },
@@ -124,7 +127,7 @@ export default function GpsPage() {
         headingAB + 180,
       );
 
-      // Draw guide lines
+      // Lignes de guidage
       for (let i = -150; i < 150; i++) {
         const offset = space * i;
         new window.google.maps.Polyline({
@@ -147,7 +150,7 @@ export default function GpsPage() {
         }).setMap(map);
       }
 
-      // Draw A-B line
+      // Ligne A-B
       new window.google.maps.Polyline({
         path: [pointA, pointC],
         geodesic: true,
@@ -159,12 +162,10 @@ export default function GpsPage() {
       map.setHeading(headingAB);
       setMapOpen(true);
 
-      // Follow position
+      // Suivi de position
       const showPosition = (pos) => {
-        const { lat, lng } = {
-          lat: kalmanRef.current.lat.update(pos.coords.latitude),
-          lng: kalmanRef.current.lng.update(pos.coords.longitude),
-        };
+        const lat = kalmanRef.current.lat.update(pos.coords.latitude);
+        const lng = kalmanRef.current.lng.update(pos.coords.longitude);
         map.setCenter({ lat, lng });
         new window.google.maps.Circle({
           strokeColor: "#FF0000",
@@ -178,7 +179,7 @@ export default function GpsPage() {
         }).setMap(map);
       };
 
-      setInterval(
+      mapIntervalRef.current = setInterval(
         () => navigator.geolocation.getCurrentPosition(showPosition),
         1000,
       );
