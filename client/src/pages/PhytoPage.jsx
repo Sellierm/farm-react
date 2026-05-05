@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Nav from "../components/Nav.jsx";
-import { useAuth } from "../contexts/AuthContext.jsx";
+import { useApiFetch } from "../hooks/useApiFetch.js";
 import usePageMeta from "../hooks/usePageMeta.js";
 import "./PhytoPage.css";
 
@@ -76,16 +76,16 @@ function ProductForm({ initial, onSubmit, onCancel }) {
         <div className="pp-form-row">
           <label>Catégorie</label>
           <select value={form.category} onChange={set("category")}>
-            {PRODUCT_CATEGORIES.map((category) => (
-              <option key={category}>{category}</option>
+            {PRODUCT_CATEGORIES.map((c) => (
+              <option key={c}>{c}</option>
             ))}
           </select>
         </div>
         <div className="pp-form-row">
           <label>Unité</label>
           <select value={form.unit} onChange={set("unit")}>
-            {PRODUCT_UNITS.map((unit) => (
-              <option key={unit}>{unit}</option>
+            {PRODUCT_UNITS.map((u) => (
+              <option key={u}>{u}</option>
             ))}
           </select>
         </div>
@@ -164,22 +164,18 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
 
   const validateProducts = () => {
     const newErrors = {};
-
     selectedProducts.forEach((sp, idx) => {
       if (!sp.quantity_used) return;
-
       const product = products.find(
         (p) => String(p.id) === String(sp.product_id),
       );
       const quantity = Number(sp.quantity_used);
       const availableStock = Number(product?.stock || 0);
-
       if (quantity > availableStock) {
         newErrors[idx] =
           `Stock insuffisant pour ${product?.name}. Disponible: ${availableStock} ${product?.unit}`;
       }
     });
-
     return newErrors;
   };
 
@@ -194,13 +190,11 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
       });
       return;
     }
-
     const validationErrors = validateProducts();
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       return;
     }
-
     onSubmit({
       date,
       notes,
@@ -237,12 +231,9 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
             <div style={{ color: "#999" }}>Aucun produit sélectionné</div>
           ) : (
             selectedProducts.map((sp, idx) => {
-              const productName = products.find(
+              const product = products.find(
                 (p) => String(p.id) === String(sp.product_id),
-              )?.name;
-              const productUnit = products.find(
-                (p) => String(p.id) === String(sp.product_id),
-              )?.unit;
+              );
               const hasError = errors[idx];
               return (
                 <div
@@ -277,7 +268,7 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
                     </select>
                     <input
                       type="number"
-                      placeholder={`Qté (${productUnit || "unit"})`}
+                      placeholder={`Qté (${product?.unit || "unit"})`}
                       min={0}
                       step="0.1"
                       value={sp.quantity_used}
@@ -288,7 +279,7 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
                         flex: "0 1 120px",
                         borderColor: hasError ? "#ff4444" : "inherit",
                         boxShadow: hasError
-                          ? "0 0 0 2px rgba(255, 68, 68, 0.1)"
+                          ? "0 0 0 2px rgba(255,68,68,0.1)"
                           : "none",
                       }}
                     />
@@ -363,7 +354,9 @@ function ApplicationForm({ initial, products, onSubmit, onCancel, onAlert }) {
 }
 
 export default function PhytoPage() {
-  const { csrfToken, refreshCsrfToken } = useAuth();
+  // ✅ Hook partagé — remplace l'implémentation locale dupliquée
+  const apiFetch = useApiFetch();
+
   const [products, setProducts] = useState([]);
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -375,71 +368,9 @@ export default function PhytoPage() {
   const [sortProductsBy, setSortProductsBy] = useState("name");
   const [filterApplicationsYear, setFilterApplicationsYear] = useState("");
   const [alertContext, setAlertContext] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   usePageMeta("Phyto", "/assets/icons8-champ-32.png");
-
-  const apiFetch = useCallback(
-    async (url, options = {}) => {
-      const method = (options.method || "GET").toUpperCase();
-      const unsafe = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
-      let token = csrfToken;
-      if (unsafe && !token) token = await refreshCsrfToken();
-
-      let body = options.body;
-      if (unsafe && token && typeof options.body === "string") {
-        try {
-          body = JSON.stringify({ ...JSON.parse(options.body), _csrf: token });
-        } catch {
-          body = options.body;
-        }
-      }
-
-      const requestOptions = {
-        ...options,
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": token || "",
-          ...options.headers,
-        },
-        body,
-      };
-
-      const res = await fetch(url, requestOptions);
-      if (res.status === 403 && unsafe) {
-        const fresh = await refreshCsrfToken();
-        const retryOptions = {
-          ...requestOptions,
-          headers: {
-            ...requestOptions.headers,
-            "x-csrf-token": fresh || "",
-          },
-        };
-        if (typeof options.body === "string") {
-          try {
-            retryOptions.body = JSON.stringify({
-              ...JSON.parse(options.body),
-              _csrf: fresh,
-            });
-          } catch {
-            retryOptions.body = options.body;
-          }
-        }
-        const retryRes = await fetch(url, retryOptions);
-        if (!retryRes.ok) {
-          const errorData = await retryRes.json().catch(() => ({}));
-          throw new Error(errorData.message || `HTTP ${retryRes.status}`);
-        }
-        return retryRes.json();
-      }
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || `HTTP ${res.status}`);
-      }
-      return res.json();
-    },
-    [csrfToken, refreshCsrfToken],
-  );
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -449,8 +380,6 @@ export default function PhytoPage() {
         apiFetch("/api/phyto/applications"),
       ]);
       setProducts(productsData);
-
-      // Normaliser les applications : s'assurer que products est toujours un array
       const normalizedApplications = (applicationsData || []).map((app) => ({
         ...app,
         products: Array.isArray(app.products)
@@ -473,11 +402,12 @@ export default function PhytoPage() {
 
   const stats = useMemo(() => {
     const lowStockCount = products.filter(
-      (product) =>
-        Number(product.stock || 0) > 0 && Number(product.stock || 0) <= 5,
+      (p) => Number(p.stock || 0) > 0 && Number(p.stock || 0) <= 5,
     ).length;
     return { lowStockCount };
   }, [products]);
+
+  // ─── CRUD produits ───────────────────────────────────────────
 
   const createProduct = async (payload) => {
     await apiFetch("/api/phyto/products", {
@@ -514,6 +444,8 @@ export default function PhytoPage() {
     });
   };
 
+  // ─── CRUD applications ───────────────────────────────────────
+
   const createApplication = async (payload) => {
     try {
       await apiFetch("/api/phyto/applications", {
@@ -523,12 +455,11 @@ export default function PhytoPage() {
       setModal(null);
       await loadData();
     } catch (error) {
-      const errorMsg =
-        error.message || "Erreur lors de la création de l'intervention";
       setAlertContext({
         type: "error",
         title: "Erreur",
-        message: errorMsg,
+        message:
+          error.message || "Erreur lors de la création de l'intervention",
         onClose: () => setAlertContext(null),
       });
     }
@@ -544,12 +475,11 @@ export default function PhytoPage() {
       setEditTarget(null);
       await loadData();
     } catch (error) {
-      const errorMsg =
-        error.message || "Erreur lors de la mise à jour de l'intervention";
       setAlertContext({
         type: "error",
         title: "Erreur",
-        message: errorMsg,
+        message:
+          error.message || "Erreur lors de la mise à jour de l'intervention",
         onClose: () => setAlertContext(null),
       });
     }
@@ -575,11 +505,10 @@ export default function PhytoPage() {
       setDeleteContext(null);
       await loadData();
     } catch (error) {
-      const errorMsg = error.message || "Erreur lors de la suppression";
       setAlertContext({
         type: "error",
         title: "Erreur",
-        message: errorMsg,
+        message: error.message || "Erreur lors de la suppression",
         onClose: () => {
           setAlertContext(null);
           setDeleteContext(null);
@@ -588,9 +517,41 @@ export default function PhytoPage() {
     }
   };
 
+  // ─── Export CSV ──────────────────────────────────────────────
+
+  const handleExportCsv = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch("/api/phyto/export", { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      // Nom de fichier avec la date du jour
+      const today = new Date().toISOString().split("T")[0];
+      a.download = `phyto_interventions_${today}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setAlertContext({
+        type: "error",
+        title: "Erreur export",
+        message: "Impossible de générer le fichier CSV.",
+        onClose: () => setAlertContext(null),
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // ─── Filtres / tri ───────────────────────────────────────────
+
   const filteredProducts = useMemo(() => {
     let filtered = products;
-
     if (searchProducts.trim()) {
       const query = searchProducts.toLowerCase();
       filtered = filtered.filter(
@@ -599,7 +560,6 @@ export default function PhytoPage() {
           p.category.toLowerCase().includes(query),
       );
     }
-
     const sorted = [...filtered];
     if (sortProductsBy === "category") {
       sorted.sort((a, b) => {
@@ -611,7 +571,6 @@ export default function PhytoPage() {
     } else {
       sorted.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     }
-
     return sorted;
   }, [products, searchProducts, sortProductsBy]);
 
@@ -624,7 +583,6 @@ export default function PhytoPage() {
 
   const filteredApplications = useMemo(() => {
     let filtered = applications;
-
     if (searchApplications.trim()) {
       const query = searchApplications.toLowerCase();
       filtered = filtered.filter((app) => {
@@ -640,20 +598,16 @@ export default function PhytoPage() {
         );
       });
     }
-
     if (filterApplicationsYear) {
-      filtered = filtered.filter((app) => {
-        const year = new Date(app.date).getFullYear();
-        return year === Number(filterApplicationsYear);
-      });
+      filtered = filtered.filter(
+        (app) =>
+          new Date(app.date).getFullYear() === Number(filterApplicationsYear),
+      );
     }
-
-    const sorted = [...filtered].sort(
-      (a, b) => new Date(b.date) - new Date(a.date),
-    );
-
-    return sorted;
+    return [...filtered].sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [applications, searchApplications, filterApplicationsYear]);
+
+  // ─── Render ──────────────────────────────────────────────────
 
   return (
     <>
@@ -671,6 +625,7 @@ export default function PhytoPage() {
         </div>
 
         <div className="pp-layout">
+          {/* ── Produits ── */}
           <section className="pp-panel pp-panel-left">
             <div className="pp-panel-header">
               <div>
@@ -794,6 +749,7 @@ export default function PhytoPage() {
             )}
           </section>
 
+          {/* ── Interventions ── */}
           <section className="pp-panel pp-panel-right">
             <div className="pp-panel-header">
               <div>
@@ -803,6 +759,17 @@ export default function PhytoPage() {
                 </span>
               </div>
               <div className="pp-header-actions">
+                {/* ✅ Bouton export CSV */}
+                {applications.length > 0 && (
+                  <button
+                    className="pp-btn pp-btn-ghost"
+                    onClick={handleExportCsv}
+                    disabled={exporting}
+                    title="Exporter en CSV"
+                  >
+                    {exporting ? "Export…" : "⬇ CSV"}
+                  </button>
+                )}
                 <button
                   className="pp-btn pp-btn-primary"
                   onClick={() => setModal("add-application")}
@@ -919,6 +886,13 @@ export default function PhytoPage() {
                       .map((p, idx) => (
                         <div key={idx} className="pp-product-meta-row">
                           <span>{p.product_name}</span>
+                          {p.quantity_used != null && (
+                            <span style={{ color: "#888", fontSize: 12 }}>
+                              — {p.quantity_used}{" "}
+                              {products.find((pr) => pr.id === p.product_id)
+                                ?.unit || ""}
+                            </span>
+                          )}
                         </div>
                       ))}
                     {application.notes ? (
@@ -932,6 +906,7 @@ export default function PhytoPage() {
         </div>
       </div>
 
+      {/* ── Modals ── */}
       {deleteContext?.pending && (
         <Modal
           title="Supprimer l'intervention"
@@ -973,16 +948,16 @@ export default function PhytoPage() {
         </Modal>
       )}
 
-      {modal === "add-product" ? (
+      {modal === "add-product" && (
         <Modal title="Ajouter un produit phyto" onClose={() => setModal(null)}>
           <ProductForm
             onSubmit={createProduct}
             onCancel={() => setModal(null)}
           />
         </Modal>
-      ) : null}
+      )}
 
-      {modal === "edit-product" && editTarget ? (
+      {modal === "edit-product" && editTarget && (
         <Modal title="Modifier le produit" onClose={() => setModal(null)}>
           <ProductForm
             initial={editTarget}
@@ -990,9 +965,9 @@ export default function PhytoPage() {
             onCancel={() => setModal(null)}
           />
         </Modal>
-      ) : null}
+      )}
 
-      {modal === "add-application" ? (
+      {modal === "add-application" && (
         <Modal title="Ajouter une intervention" onClose={() => setModal(null)}>
           <ApplicationForm
             products={products}
@@ -1001,9 +976,9 @@ export default function PhytoPage() {
             onAlert={setAlertContext}
           />
         </Modal>
-      ) : null}
+      )}
 
-      {modal === "edit-application" && editTarget ? (
+      {modal === "edit-application" && editTarget && (
         <Modal title="Modifier l'intervention" onClose={() => setModal(null)}>
           <ApplicationForm
             initial={editTarget}
@@ -1013,7 +988,7 @@ export default function PhytoPage() {
             onAlert={setAlertContext}
           />
         </Modal>
-      ) : null}
+      )}
 
       {alertContext?.type === "error" && (
         <Modal

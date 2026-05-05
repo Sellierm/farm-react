@@ -48,6 +48,7 @@ if (!process.env.SESSION_SECRET) {
   console.warn("[WARN] SESSION_SECRET manquant. Secret temporaire généré.");
 }
 
+// ✅ Pool MySQL avec promise API
 const pool = mysql.createPool({
   host: bd.host,
   user: bd.user,
@@ -357,6 +358,7 @@ app.post("/api/auth", authLimiter, async (req, res) => {
   authLog(clientIp, "INFO", `Tentative de connexion : "${username}"`);
 
   try {
+    // ✅ async/await — plus de callback imbriqué
     const [results] = await pool.execute(
       "SELECT password FROM user WHERE name = ?",
       [username],
@@ -556,9 +558,11 @@ app.post("/api/location", locationLimiter, (req, res) => {
       heading: heading !== undefined ? heading : null,
     };
 
+    // ✅ WebSocket et réponse HTTP immédiats — avant tout I/O
     io.emit("location_update", newPoint);
     res.status(200).json({ success: true });
 
+    // ✅ Mise à jour mémoire (pas de disque)
     positionsMemory[deviceId] = newPoint;
     dirtyPositions = true;
 
@@ -856,6 +860,7 @@ app.get("/api/phyto/applications", authMiddleware, async (req, res) => {
   }
 });
 
+// ✅ Transaction : insert application + produits + décrémentation stock atomiques
 app.post("/api/phyto/applications", authMiddleware, async (req, res) => {
   const { date, notes, products } = req.body;
 
@@ -929,11 +934,13 @@ app.post("/api/phyto/applications", authMiddleware, async (req, res) => {
     }
 
     await conn.commit();
-    res.status(201).json({
-      success: true,
-      id: applicationId,
-      message: "Application created",
-    });
+    res
+      .status(201)
+      .json({
+        success: true,
+        id: applicationId,
+        message: "Application created",
+      });
   } catch (err) {
     await conn.rollback();
     console.error("Error creating application:", err);
@@ -945,6 +952,7 @@ app.post("/api/phyto/applications", authMiddleware, async (req, res) => {
   }
 });
 
+// ✅ Transaction : restauration ancien stock + insert nouveaux produits + décrémentation
 app.put("/api/phyto/applications/:id", authMiddleware, async (req, res) => {
   const { id } = req.params;
   const { date, notes, products } = req.body;
@@ -1020,6 +1028,7 @@ app.put("/api/phyto/applications/:id", authMiddleware, async (req, res) => {
   }
 });
 
+// ✅ Transaction : suppression + restauration stock optionnelle
 app.delete("/api/phyto/applications/:id", authMiddleware, async (req, res) => {
   const { id } = req.params;
   const restoreStock = req.query.restoreStock === "true";
@@ -1053,6 +1062,68 @@ app.delete("/api/phyto/applications/:id", authMiddleware, async (req, res) => {
       .json({ success: false, message: "Error deleting application" });
   } finally {
     conn.release();
+  }
+});
+
+// ─────────────────────────────────────────────
+// Phyto — Export CSV
+// ─────────────────────────────────────────────
+
+app.get("/api/phyto/export", authMiddleware, async (req, res) => {
+  try {
+    const [applications] = await pool.execute(
+      `SELECT
+        a.id,
+        a.date,
+        a.notes,
+        ap.quantity_used,
+        p.name  AS product_name,
+        p.unit  AS product_unit,
+        p.category
+      FROM phyto_applications a
+      LEFT JOIN phyto_application_products ap ON a.id = ap.application_id
+      LEFT JOIN phyto_products p ON ap.product_id = p.id
+      ORDER BY a.date DESC, a.id, p.name`,
+    );
+
+    // En-tête CSV
+    const BOM = "\uFEFF"; // BOM UTF-8 pour compatibilité Excel
+    const headers = [
+      "Date",
+      "Produit",
+      "Catégorie",
+      "Quantité",
+      "Unité",
+      "Notes",
+    ];
+
+    const rows = applications.map((row) => [
+      row.date ? new Date(row.date).toLocaleDateString("fr-FR") : "",
+      row.product_name || "",
+      row.category || "",
+      row.quantity_used != null
+        ? String(row.quantity_used).replace(".", ",")
+        : "",
+      row.product_unit || "",
+      // Échapper les guillemets dans les notes
+      row.notes ? `"${String(row.notes).replace(/"/g, '""')}"` : "",
+    ]);
+
+    const csvContent =
+      BOM + [headers.join(";"), ...rows.map((r) => r.join(";"))].join("\r\n");
+
+    const today = new Date().toISOString().split("T")[0];
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="phyto_interventions_${today}.csv"`,
+    );
+    res.send(csvContent);
+  } catch (err) {
+    console.error("Erreur export CSV:", err);
+    res
+      .status(500)
+      .json({ success: false, message: "Erreur lors de l'export" });
   }
 });
 
