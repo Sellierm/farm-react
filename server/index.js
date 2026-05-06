@@ -48,6 +48,7 @@ if (!process.env.SESSION_SECRET) {
   console.warn("[WARN] SESSION_SECRET manquant. Secret temporaire généré.");
 }
 
+// ✅ Pool MySQL avec promise API
 const pool = mysql.createPool({
   host: bd.host,
   user: bd.user,
@@ -357,6 +358,7 @@ app.post("/api/auth", authLimiter, async (req, res) => {
   authLog(clientIp, "INFO", `Tentative de connexion : "${username}"`);
 
   try {
+    // ✅ async/await — plus de callback imbriqué
     const [results] = await pool.execute(
       "SELECT password FROM user WHERE name = ?",
       [username],
@@ -416,26 +418,12 @@ app.post("/api/auth", authLimiter, async (req, res) => {
     req.session.csrfToken = crypto.randomBytes(32).toString("hex");
     authLog(clientIp, "OK", `Connexion réussie : "${username}"`);
 
-    // Auth Sencrop
+    // Auth Sencrop — refreshSencropToken est défini plus bas
+    // (const async, résolu au moment de lexécution de la route, pas de la déclaration)
     try {
-      const crypt = Buffer.from(
-        sencrop.applicationId + ":" + sencrop.applicationSecret,
-      ).toString("base64");
-      const response = await fetch(`${sencrop.endPoint}/oauth2/token`, {
-        method: "POST",
-        body: JSON.stringify({
-          grant_type: "client_credentials",
-          scope: "user",
-        }),
-        headers: {
-          Authorization: `Basic ${crypt}`,
-          "Content-Type": "application/json",
-        },
-      });
-      const data = await response.json();
-      sencrop.accessToken = data.access_token;
+      await refreshSencropToken();
     } catch (err) {
-      console.error("Sencrop auth error:", err);
+      console.error("Sencrop auth error at login:", err);
     }
 
     return res
@@ -556,9 +544,11 @@ app.post("/api/location", locationLimiter, (req, res) => {
       heading: heading !== undefined ? heading : null,
     };
 
+    // ✅ WebSocket et réponse HTTP immédiats — avant tout I/O
     io.emit("location_update", newPoint);
     res.status(200).json({ success: true });
 
+    // ✅ Mise à jour mémoire (pas de disque)
     positionsMemory[deviceId] = newPoint;
     dirtyPositions = true;
 
@@ -611,14 +601,98 @@ app.get("/api/positions-history", authMiddleware, (req, res) => {
 // Sencrop / Forecast helpers
 // ─────────────────────────────────────────────
 
+/**
+ * Récupère un nouveau token Sencrop via client_credentials.
+ * Stocke le token et son expiration dans l'objet sencrop.
+ * Retourne true si succès, false sinon.
+ */
+const refreshSencropToken = async () => {
+  try {
+    const crypt = Buffer.from(
+      sencrop.applicationId + ":" + sencrop.applicationSecret,
+    ).toString("base64");
+
+    const response = await fetch(`${sencrop.endPoint}/oauth2/token`, {
+      method: "POST",
+      body: JSON.stringify({ grant_type: "client_credentials", scope: "user" }),
+      headers: {
+        Authorization: `Basic ${crypt}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      console.error("[Sencrop] Échec refresh token — HTTP", response.status);
+      return false;
+    }
+
+    const data = await response.json();
+    sencrop.accessToken = data.access_token;
+
+    // Stocker l'expiration (expires_in en secondes, avec 60s de marge)
+    const expiresIn = data.expires_in ?? 3600;
+    sencrop.tokenExpiresAt = Date.now() + (expiresIn - 60) * 1000;
+
+    console.log(
+      `[Sencrop] Token renouvelé — expire dans ${Math.round(expiresIn / 60)} min`,
+    );
+    return true;
+  } catch (err) {
+    console.error("[Sencrop] Erreur refresh token:", err.message);
+    return false;
+  }
+};
+
+/**
+ * Vérifie si le token est expiré ou absent.
+ * Si oui, tente un refresh avant de continuer.
+ */
+const ensureSencropToken = async () => {
+  const now = Date.now();
+  const isExpired =
+    !sencrop.accessToken ||
+    !sencrop.tokenExpiresAt ||
+    now >= sencrop.tokenExpiresAt;
+
+  if (isExpired) {
+    console.log("[Sencrop] Token absent ou expiré — tentative de refresh");
+    return refreshSencropToken();
+  }
+  return true;
+};
+
+/**
+ * Appelle l'API Sencrop avec refresh automatique en cas de 401.
+ * - Vérifie d'abord si le token est proche de l'expiration
+ * - Si la réponse est 401, tente un refresh puis réessaie une fois
+ */
 const fetchSencropData = async (url) => {
   try {
-    const r = await fetch(url, {
+    await ensureSencropToken();
+
+    let r = await fetch(url, {
       headers: { Authorization: `Bearer ${sencrop.accessToken}` },
     });
+
+    // Token refusé → refresh et retry une seule fois
+    if (r.status === 401) {
+      console.warn("[Sencrop] 401 reçu — refresh token et retry");
+      const refreshed = await refreshSencropToken();
+      if (!refreshed) return { success: false };
+
+      r = await fetch(url, {
+        headers: { Authorization: `Bearer ${sencrop.accessToken}` },
+      });
+    }
+
+    if (!r.ok) {
+      console.error("[Sencrop] Erreur HTTP", r.status, url);
+      return { success: false };
+    }
+
     return await r.json();
   } catch (err) {
-    console.error(err);
+    console.error("[Sencrop] Erreur réseau:", err.message);
     return { success: false };
   }
 };
@@ -856,6 +930,7 @@ app.get("/api/phyto/applications", authMiddleware, async (req, res) => {
   }
 });
 
+// ✅ Transaction : insert application + produits + décrémentation stock atomiques
 app.post("/api/phyto/applications", authMiddleware, async (req, res) => {
   const { date, notes, products } = req.body;
 
@@ -929,11 +1004,13 @@ app.post("/api/phyto/applications", authMiddleware, async (req, res) => {
     }
 
     await conn.commit();
-    res.status(201).json({
-      success: true,
-      id: applicationId,
-      message: "Application created",
-    });
+    res
+      .status(201)
+      .json({
+        success: true,
+        id: applicationId,
+        message: "Application created",
+      });
   } catch (err) {
     await conn.rollback();
     console.error("Error creating application:", err);
@@ -945,6 +1022,7 @@ app.post("/api/phyto/applications", authMiddleware, async (req, res) => {
   }
 });
 
+// ✅ Transaction : restauration ancien stock + insert nouveaux produits + décrémentation
 app.put("/api/phyto/applications/:id", authMiddleware, async (req, res) => {
   const { id } = req.params;
   const { date, notes, products } = req.body;
@@ -1020,6 +1098,7 @@ app.put("/api/phyto/applications/:id", authMiddleware, async (req, res) => {
   }
 });
 
+// ✅ Transaction : suppression + restauration stock optionnelle
 app.delete("/api/phyto/applications/:id", authMiddleware, async (req, res) => {
   const { id } = req.params;
   const restoreStock = req.query.restoreStock === "true";
@@ -1112,42 +1191,6 @@ app.get("/api/phyto/export", authMiddleware, async (req, res) => {
     res.send(csvContent);
   } catch (err) {
     console.error("Erreur export CSV:", err);
-    res
-      .status(500)
-      .json({ success: false, message: "Erreur lors de l'export" });
-  }
-});
-
-app.get("/api/phyto/products/export", authMiddleware, async (req, res) => {
-  try {
-    const [products] = await pool.execute(
-      "SELECT id, name, category, stock, unit, notes FROM phyto_products ORDER BY category ASC, name ASC",
-    );
-
-    // En-tête CSV
-    const BOM = "\uFEFF"; // BOM UTF-8 pour compatibilité Excel
-    const headers = ["Produit", "Catégorie", "Stock", "Unité", "Notes"];
-
-    const rows = products.map((row) => [
-      row.name || "",
-      row.category || "",
-      String(row.stock || 0).replace(".", ","),
-      row.unit || "",
-      row.notes ? `"${String(row.notes).replace(/"/g, '""')}"` : "",
-    ]);
-
-    const csvContent =
-      BOM + [headers.join(";"), ...rows.map((r) => r.join(";"))].join("\r\n");
-
-    const today = new Date().toISOString().split("T")[0];
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="phyto_produits_${today}.csv"`,
-    );
-    res.send(csvContent);
-  } catch (err) {
-    console.error("Erreur export CSV produits:", err);
     res
       .status(500)
       .json({ success: false, message: "Erreur lors de l'export" });
