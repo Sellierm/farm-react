@@ -23,3 +23,6 @@ Thumbs.db
 .idea/
 
 server/modules/mapModule.js
+Dockerfile
+package-lock.json
+.dockerignore
