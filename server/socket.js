@@ -13,6 +13,10 @@ const map = require("./modules/mapModule");
 
 let io;
 
+function fmtPoint(point) {
+  return `device=${point.device_id} lat=${Number(point.latitude).toFixed(6)} lon=${Number(point.longitude).toFixed(6)} source=${point.source}`;
+}
+
 function initSocket(server) {
   io = require_socket_io(server, {
     cors: {
@@ -44,6 +48,11 @@ function initSocket(server) {
         crypto.timingSafeEqual(keyBuf, expectedBuf);
 
       if (!keyValid || !GPS_ALLOWED_IDS.includes(String(deviceId))) {
+        authLog(
+          socket.handshake.address || "unknown",
+          "FAIL",
+          `Connexion device GPS refusée : device=${deviceId} non autorisé ou clé invalide`,
+        );
         return next(new Error("Unauthorized device"));
       }
 
@@ -74,6 +83,11 @@ function initSocket(server) {
         try {
           const { error, point } = buildLocationPoint(socket.deviceId, payload);
           if (error) {
+            authLog(
+              socketIp,
+              "FAIL",
+              `Position rejetée (socket) : device=${socket.deviceId} — ${error}`,
+            );
             if (typeof ack === "function")
               ack({ success: false, message: error });
             return;
@@ -83,9 +97,19 @@ function initSocket(server) {
           // savoir que la position a ete acceptee, pas qu'elle est deja
           // persistee sur disque.
           if (typeof ack === "function") ack({ success: true });
+          authLog(
+            socketIp,
+            "OK",
+            `Position reçue (socket) : ${fmtPoint(point)}`,
+          );
           ingestLocationPoint(io, point);
         } catch (err) {
           console.error("[LOCATION][socket] Erreur interne:", err);
+          authLog(
+            socketIp,
+            "FAIL",
+            `Erreur interne réception position (socket) device=${socket.deviceId}: ${err.message}`,
+          );
           if (typeof ack === "function") {
             ack({ success: false, message: "Internal server error" });
           }
