@@ -7,6 +7,7 @@ It lets users:
 - view forecast (OpenWeatherMap) and Sencrop weather data,
 - display fields on a map,
 - track GPS positions/history of machines,
+- track inventory of plant protection products and interventions
 
 ## Getting Started / Implementation
 
@@ -112,3 +113,12 @@ GPS data is sent by the **gps-sender** repository to this project's endpoint:
 
 - Repository: [https://github.com/Sellierm/gps-sender](https://github.com/Sellierm/gps-sender)
 - `POST /api/location`
+
+## View
+Actually the website looks like that :
+<img width="1908" height="489" alt="image" src="https://github.com/user-attachments/assets/b579194b-b468-492b-8556-e6131bd391e8" />
+<img width="1917" height="804" alt="image" src="https://github.com/user-attachments/assets/43901f6b-944d-46f5-afe6-3664ffda4713" />
+<img width="1914" height="860" alt="image" src="https://github.com/user-attachments/assets/45bab89c-316a-4fd2-8896-e98b27ad9f19" />
+<img width="1909" height="416" alt="image" src="https://github.com/user-attachments/assets/a8107804-f02e-479a-b7c1-f2ee4eb80915" />
+
+
