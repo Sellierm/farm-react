@@ -1,110 +1,30 @@
 const express = require("express");
 const crypto = require("crypto");
-const fs = require("fs");
-const path = require("path");
-const { pool, GPS_INGEST_KEY, GPS_ALLOWED_IDS } = require("../config");
+const { GPS_INGEST_KEY, GPS_ALLOWED_IDS } = require("../config");
 const { authMiddleware, locationLimiter } = require("../middleware");
+const {
+  buildLocationPoint,
+  ingestLocationPoint,
+  getPositions,
+  getHistory,
+} = require("../locationStore");
 
 function createGpsRouter(io) {
   const router = express.Router();
 
-  let positionsMemory = {};
-  let historyMemory = {};
-
-  let dirtyPositions = false;
-  let dirtyHistory = false;
-
-  function loadMemoryFromDisk() {
-    const locationsFilePath = path.join(__dirname, "../latest_positions.json");
-    const historyFilePath = path.join(__dirname, "../location_history.json");
-    positionsMemory = readJsonFileSafe(locationsFilePath, {});
-    historyMemory = readJsonFileSafe(historyFilePath, {});
-    console.log("[GPS] Mémoire chargée depuis disque");
-  }
-
-  function readJsonFileSafe(filePath, fallback = {}) {
-    try {
-      if (!fs.existsSync(filePath)) return fallback;
-      const content = fs.readFileSync(filePath, "utf8");
-      if (!content || !content.trim()) return fallback;
-      const parsed = JSON.parse(content);
-      return parsed && typeof parsed === "object" ? parsed : fallback;
-    } catch {
-      return fallback;
-    }
-  }
-
-  function startDiskPersistence() {
-    setInterval(() => {
-      if (dirtyPositions) {
-        const locationsFilePath = path.join(
-          __dirname,
-          "../latest_positions.json",
-        );
-        fs.writeFile(
-          locationsFilePath,
-          JSON.stringify(positionsMemory, null, 2),
-          "utf8",
-          (err) => {
-            if (err)
-              console.error("[GPS] Erreur écriture positions:", err.message);
-          },
-        );
-        dirtyPositions = false;
-      }
-      if (dirtyHistory) {
-        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-        for (const deviceId of Object.keys(historyMemory)) {
-          historyMemory[deviceId] = (historyMemory[deviceId] || []).filter(
-            (p) => {
-              const t = new Date(p.timestamp).getTime();
-              return Number.isFinite(t) && t >= cutoff;
-            },
-          );
-        }
-        const historyFilePath = path.join(
-          __dirname,
-          "../location_history.json",
-        );
-        fs.writeFile(
-          historyFilePath,
-          JSON.stringify(historyMemory, null, 2),
-          "utf8",
-          (err) => {
-            if (err)
-              console.error("[GPS] Erreur écriture historique:", err.message);
-          },
-        );
-        dirtyHistory = false;
-      }
-    }, 10_000);
-  }
-
-  loadMemoryFromDisk();
-  startDiskPersistence();
-
+  // Route HTTP historique — conservée pour compatibilité/tests, mais le
+  // tracker Android envoie désormais ses positions via le canal Socket.IO
+  // "location" (voir socket.js), qui évite le coût d'un handshake TCP/TLS
+  // répété à chaque position et bénéficie de la reconnexion automatique.
   router.post("/api/location", locationLimiter, (req, res) => {
     try {
-      const {
-        latitude,
-        longitude,
-        id,
-        timestamp,
-        key,
-        source,
-        altitude,
-        accuracy,
-        speed,
-        heading,
-      } = req.body;
+      const { id, key } = req.body;
 
       if (!GPS_INGEST_KEY) {
-        return res
-          .status(500)
-          .json({
-            success: false,
-            message: "GPS_INGEST_KEY is not configured",
-          });
+        return res.status(500).json({
+          success: false,
+          message: "GPS_INGEST_KEY is not configured",
+        });
       }
 
       const keyStr = typeof key === "string" ? key : "";
@@ -121,56 +41,15 @@ function createGpsRouter(io) {
           .json({ success: false, message: "Unauthorized: invalid payload" });
       }
 
-      if (latitude === undefined || longitude === undefined || !timestamp) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Missing required fields" });
-      }
-
-      if (
-        latitude < -90 ||
-        latitude > 90 ||
-        longitude < -180 ||
-        longitude > 180
-      ) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid coordinates" });
-      }
-
       const deviceId = String(id || "0");
-      const newPoint = {
-        latitude,
-        longitude,
-        timestamp,
-        device_id: deviceId,
-        updated_at: new Date().toISOString(),
-        source: source || "unknown",
-        altitude: altitude !== undefined ? altitude : null,
-        accuracy: accuracy !== undefined ? accuracy : null,
-        speed: speed !== undefined ? speed : null,
-        heading: heading !== undefined ? heading : null,
-      };
-
-      io.emit("location_update", newPoint);
-      res.status(200).json({ success: true });
-
-      positionsMemory[deviceId] = newPoint;
-      dirtyPositions = true;
-
-      if (!Array.isArray(historyMemory[deviceId])) historyMemory[deviceId] = [];
-      const history = historyMemory[deviceId];
-      const last = history.length ? history[history.length - 1] : null;
-      const isDuplicate =
-        last &&
-        String(last.timestamp) === String(newPoint.timestamp) &&
-        Number(last.latitude) === Number(newPoint.latitude) &&
-        Number(last.longitude) === Number(newPoint.longitude);
-
-      if (!isDuplicate) {
-        history.push(newPoint);
-        dirtyHistory = true;
+      const { error, point } = buildLocationPoint(deviceId, req.body);
+      if (error) {
+        return res.status(400).json({ success: false, message: error });
       }
+
+      // Réponse HTTP immédiate — avant tout I/O disque
+      res.status(200).json({ success: true });
+      ingestLocationPoint(io, point);
     } catch (error) {
       console.error("[LOCATION] Erreur interne:", error);
       if (!res.headersSent) {
@@ -182,7 +61,7 @@ function createGpsRouter(io) {
   });
 
   router.get("/api/latest-positions", authMiddleware, (req, res) => {
-    res.status(200).json({ success: true, positions: positionsMemory });
+    res.status(200).json({ success: true, positions: getPositions() });
   });
 
   router.get("/api/positions-history", authMiddleware, (req, res) => {
@@ -193,6 +72,7 @@ function createGpsRouter(io) {
         : 24;
 
     const cutoff = Date.now() - hours * 60 * 60 * 1000;
+    const historyMemory = getHistory();
     const filtered = {};
     for (const deviceId of Object.keys(historyMemory)) {
       filtered[deviceId] = (historyMemory[deviceId] || []).filter((point) => {

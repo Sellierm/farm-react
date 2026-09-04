@@ -1,7 +1,14 @@
 const require_socket_io = require("socket.io");
-const { sessionMiddleware, isOriginAllowed } = require("./config");
+const crypto = require("crypto");
+const {
+  sessionMiddleware,
+  isOriginAllowed,
+  GPS_INGEST_KEY,
+  GPS_ALLOWED_IDS,
+} = require("./config");
 const { authLog } = require("./middleware");
 const { fetchSencropData } = require("./helpers");
+const { buildLocationPoint, ingestLocationPoint } = require("./locationStore");
 const map = require("./modules/mapModule");
 
 let io;
@@ -15,7 +22,36 @@ function initSocket(server) {
     },
   });
 
+  // Authentification double :
+  //  - Devices GPS (tablette RTK) : identifies par deviceId + cle statique
+  //    fournis dans l'objet `auth` du handshake (pas de session/cookie).
+  //  - Clients web (React) : authentifies par la session cookie existante,
+  //    comportement inchange.
   io.use((socket, next) => {
+    const { deviceId, key } = socket.handshake.auth || {};
+
+    if (deviceId !== undefined || key !== undefined) {
+      if (!GPS_INGEST_KEY) {
+        return next(new Error("GPS ingest not configured"));
+      }
+
+      const keyStr = typeof key === "string" ? key : "";
+      const keyBuf = Buffer.from(keyStr, "utf8");
+      const expectedBuf = Buffer.from(GPS_INGEST_KEY, "utf8");
+      const keyValid =
+        keyBuf.length === expectedBuf.length &&
+        keyBuf.length > 0 &&
+        crypto.timingSafeEqual(keyBuf, expectedBuf);
+
+      if (!keyValid || !GPS_ALLOWED_IDS.includes(String(deviceId))) {
+        return next(new Error("Unauthorized device"));
+      }
+
+      socket.isGpsDevice = true;
+      socket.deviceId = String(deviceId);
+      return next();
+    }
+
     sessionMiddleware(socket.request, {}, () => {
       if (socket.request.session?.username) return next();
       return next(new Error("Unauthorized"));
@@ -23,8 +59,52 @@ function initSocket(server) {
   });
 
   io.on("connection", (socket) => {
-    const socketUser = socket.request.session?.username || "inconnu";
     const socketIp = socket.handshake.address || "unknown";
+
+    // ── Connexion device GPS : uniquement l'event "location", pas d'accès
+    // aux handlers web (askPlan, askDataR1...) ──────────────────────────
+    if (socket.isGpsDevice) {
+      authLog(
+        socketIp,
+        "INFO",
+        `Device GPS connecté : ${socket.deviceId} (id: ${socket.id})`,
+      );
+
+      socket.on("location", (payload, ack) => {
+        try {
+          const { error, point } = buildLocationPoint(socket.deviceId, payload);
+          if (error) {
+            if (typeof ack === "function")
+              ack({ success: false, message: error });
+            return;
+          }
+
+          // Ack immediat avant l'I/O disque — le device n'a besoin de
+          // savoir que la position a ete acceptee, pas qu'elle est deja
+          // persistee sur disque.
+          if (typeof ack === "function") ack({ success: true });
+          ingestLocationPoint(io, point);
+        } catch (err) {
+          console.error("[LOCATION][socket] Erreur interne:", err);
+          if (typeof ack === "function") {
+            ack({ success: false, message: "Internal server error" });
+          }
+        }
+      });
+
+      socket.on("disconnect", (reason) => {
+        authLog(
+          socketIp,
+          "INFO",
+          `Device GPS déconnecté : ${socket.deviceId} (raison: ${reason})`,
+        );
+      });
+
+      return;
+    }
+
+    // ── Connexion client web (session utilisateur) — comportement inchangé ──
+    const socketUser = socket.request.session?.username || "inconnu";
     authLog(
       socketIp,
       "INFO",
