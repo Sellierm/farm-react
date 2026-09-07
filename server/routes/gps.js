@@ -7,6 +7,7 @@ const {
   ingestLocationPoint,
   getPositions,
   getHistory,
+  getHistoryDates,
 } = require("../locationStore");
 
 function fmtPoint(point) {
@@ -62,7 +63,7 @@ function createGpsRouter(io) {
         return res.status(400).json({ success: false, message: error });
       }
 
-      // Réponse HTTP immédiate — avant tout I/O disque
+      // Réponse HTTP immédiate — avant toute écriture en base
       res.status(200).json({ success: true });
       authLog(clientIp, "OK", `Position reçue (HTTP) : ${fmtPoint(point)}`);
       ingestLocationPoint(io, point);
@@ -81,27 +82,52 @@ function createGpsRouter(io) {
     }
   });
 
-  router.get("/api/latest-positions", authMiddleware, (req, res) => {
-    res.status(200).json({ success: true, positions: getPositions() });
+  router.get("/api/latest-positions", authMiddleware, async (req, res) => {
+    try {
+      const positions = await getPositions();
+      res.status(200).json({ success: true, positions });
+    } catch (error) {
+      console.error("[GPS] Erreur lecture positions:", error.message);
+      res
+        .status(500)
+        .json({ success: false, message: "Internal server error" });
+    }
   });
 
-  router.get("/api/positions-history", authMiddleware, (req, res) => {
-    const requestedHours = Number(req.query.hours);
-    const hours =
-      Number.isFinite(requestedHours) && requestedHours > 0
-        ? Math.min(requestedHours, 168)
-        : 24;
+  router.get("/api/positions-history", authMiddleware, async (req, res) => {
+    const dateParam = req.query.date;
 
-    const cutoff = Date.now() - hours * 60 * 60 * 1000;
-    const historyMemory = getHistory();
-    const filtered = {};
-    for (const deviceId of Object.keys(historyMemory)) {
-      filtered[deviceId] = (historyMemory[deviceId] || []).filter((point) => {
-        const t = new Date(point.timestamp).getTime();
-        return Number.isFinite(t) && t >= cutoff;
-      });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateParam || "")) {
+      return res.status(400).json({ success: false, message: "Invalid date" });
     }
-    return res.status(200).json({ success: true, positions: filtered, hours });
+
+    const dayStart = new Date(`${dateParam}T00:00:00`).getTime();
+    if (!Number.isFinite(dayStart)) {
+      return res.status(400).json({ success: false, message: "Invalid date" });
+    }
+    const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+
+    try {
+      const positions = await getHistory(dayStart, dayEnd);
+      res.status(200).json({ success: true, positions, date: dateParam });
+    } catch (error) {
+      console.error("[GPS] Erreur lecture historique:", error.message);
+      res
+        .status(500)
+        .json({ success: false, message: "Internal server error" });
+    }
+  });
+
+  router.get("/api/positions-dates", authMiddleware, async (req, res) => {
+    try {
+      const dates = await getHistoryDates();
+      res.status(200).json({ success: true, dates });
+    } catch (error) {
+      console.error("[GPS] Erreur lecture dates historiques:", error.message);
+      res
+        .status(500)
+        .json({ success: false, message: "Internal server error" });
+    }
   });
 
   return router;

@@ -32,6 +32,7 @@ function initSocket(server) {
   //  - Clients web (React) : authentifies par la session cookie existante,
   //    comportement inchange.
   io.use((socket, next) => {
+    console.log("[DEBUG] handshake.auth:", socket.handshake.auth);
     const { deviceId, key } = socket.handshake.auth || {};
 
     if (deviceId !== undefined || key !== undefined) {

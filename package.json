@@ -6,7 +6,7 @@
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",
     "install:all": "cd server && npm install && cd ../client && npm install",
-    "build": "cd client && npm run build",
+    "build": "cd client && npm run build && cd ../../ && docker compose up -d --build",
     "start": "cd server && npm start"
   },
   "author": "Mathieu",

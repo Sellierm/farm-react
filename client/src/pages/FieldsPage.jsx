@@ -38,11 +38,18 @@ export default function FieldsPage() {
   const mapRef = useRef(null);
   const [year, setYear] = useState(new Date().getFullYear());
   const yearRef = useRef(year);
+  const [selectedDate, setSelectedDate] = useState("");
+  const selectedDateRef = useRef(selectedDate);
+  const [availableDates, setAvailableDates] = useState([]);
 
   // Synchronise yearRef.current with year
   useEffect(() => {
     yearRef.current = year;
   }, [year]);
+
+  useEffect(() => {
+    selectedDateRef.current = selectedDate;
+  }, [selectedDate]);
 
   const [mapsKey, setMapsKey] = useState("");
   const [mapInfo, setMapInfo] = useState(["", ""]);
@@ -72,6 +79,22 @@ export default function FieldsPage() {
   }, []);
 
   useEffect(() => {
+    fetch("/api/positions-dates", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.success || !Array.isArray(data.dates)) return;
+        setAvailableDates(data.dates);
+        const today = new Date().toISOString().slice(0, 10);
+        const initialDate = data.dates.includes(today)
+          ? today
+          : data.dates[0] || "";
+        setSelectedDate(initialDate);
+        selectedDateRef.current = initialDate;
+      })
+      .catch((err) => console.error("Error loading GPS dates:", err));
+  }, []);
+
+  useEffect(() => {
     if (!socket) return;
     socket.on("getPlan", (src) => initGoogleMap(src));
     return () => socket.off("getPlan");
@@ -81,26 +104,10 @@ export default function FieldsPage() {
   useEffect(() => {
     console.log("year:", year, "current:", new Date().getFullYear());
     const isCurrentYear = year === new Date().getFullYear();
+    const isToday = selectedDate === new Date().toISOString().slice(0, 10);
     if (!socket) return;
 
-    if (!isCurrentYear) {
-      // Hide markers and polylines when selected year is not current
-      gpsMarkersRef.current.forEach((m) => m.setMap(null));
-      gpsMarkersRef.current = [];
-      markerByDeviceRef.current = {};
-      infoWindowByDeviceRef.current = {};
-      activeInfoWindowRef.current?.close();
-      activeInfoWindowRef.current = null;
-      activeDeviceIdRef.current = null;
-
-      // Also hide polylines
-      gpsPolylinesRef.current.forEach((line) => line.setMap(null));
-      gpsPolylinesRef.current = [];
-      polylinesMapRef.current = {};
-
-      setGpsPositions({});
-      return;
-    }
+    if (!isCurrentYear || !isToday) return;
 
     const handleLocationUpdate = (point) => {
       const map = mapInstanceRef.current;
@@ -147,7 +154,7 @@ export default function FieldsPage() {
 
     socket.on("location_update", handleLocationUpdate);
     return () => socket.off("location_update", handleLocationUpdate);
-  }, [socket, year]); // eslint-disable-line
+  }, [socket, year, selectedDate]); // eslint-disable-line
 
   useEffect(() => {
     document.body.classList.add("body-overflow-hidden");
@@ -158,6 +165,18 @@ export default function FieldsPage() {
     setYear(y);
     yearRef.current = y; // Update synchronously!
     if (socket) socket.emit("askPlan", y);
+    const yearDates = availableDates.filter((date) => date.startsWith(`${y}-`));
+    const nextDate = yearDates.includes(selectedDateRef.current)
+      ? selectedDateRef.current
+      : yearDates[0] || "";
+    changeDate(nextDate);
+  };
+
+  const changeDate = (date) => {
+    setSelectedDate(date);
+    selectedDateRef.current = date;
+    if (mapInstanceRef.current)
+      loadPositionHistory(mapInstanceRef.current, date);
   };
 
   useEffect(() => {
@@ -199,11 +218,12 @@ export default function FieldsPage() {
     }
   };
 
-  const loadPositionHistory = async (map) => {
+  const loadPositionHistory = async (map, date = selectedDateRef.current) => {
     try {
-      const res = await fetch("/api/positions-history?hours=24", {
-        credentials: "include",
-      });
+      const res = await fetch(
+        `/api/positions-history?date=${encodeURIComponent(date)}`,
+        { credentials: "include" },
+      );
       const data = await res.json();
       if (!data.success || !map) return;
 
@@ -213,6 +233,13 @@ export default function FieldsPage() {
       polylinesMapRef.current = {};
 
       const historyByDevice = data.positions || {};
+
+      gpsMarkersRef.current.forEach((marker) => marker.setMap(null));
+      gpsMarkersRef.current = [];
+      markerByDeviceRef.current = {};
+      infoWindowByDeviceRef.current = {};
+
+      const historicalPositions = {};
       for (const deviceId of Object.keys(historyByDevice)) {
         const rawSeries = Array.isArray(historyByDevice[deviceId])
           ? historyByDevice[deviceId]
@@ -229,6 +256,20 @@ export default function FieldsPage() {
 
         if (path.length < 1) continue;
 
+        const lastPoint = rawSeries[rawSeries.length - 1];
+        const lastPosition = {
+          lat: Number(lastPoint.latitude),
+          lng: Number(lastPoint.longitude),
+        };
+        if (
+          Number.isFinite(lastPosition.lat) &&
+          Number.isFinite(lastPosition.lng)
+        ) {
+          historicalPositions[deviceId] = lastPoint;
+          markerPositionsRef.current[deviceId] = lastPosition;
+          createMarker(map, deviceId, lastPosition, lastPoint);
+        }
+
         const polyline = new window.google.maps.Polyline({
           path,
           geodesic: true,
@@ -241,6 +282,7 @@ export default function FieldsPage() {
         polylinesMapRef.current[deviceId] = polyline;
         gpsPolylinesRef.current.push(polyline);
       }
+      setGpsPositions((previous) => ({ ...previous, ...historicalPositions }));
     } catch (err) {
       console.error("Error loading GPS history:", err);
     }
@@ -493,16 +535,24 @@ export default function FieldsPage() {
       // ── Chargement initial conditionné à l'année courante ──────────────
       const isCurrentYear = yearRef.current === new Date().getFullYear();
       if (isCurrentYear) {
-        loadGPSPositions(map, true).then((changed) => {
-          if (changed) loadPositionHistory(map);
+        loadGPSPositions(map, true).then(() => {
+          if (selectedDateRef.current) {
+            loadPositionHistory(map, selectedDateRef.current);
+          }
         });
+      } else if (selectedDateRef.current) {
+        loadPositionHistory(map, selectedDateRef.current);
       }
 
       // Polling de fallback toutes les 30s
       if (gpsPollIntervalRef.current) clearInterval(gpsPollIntervalRef.current);
       gpsPollIntervalRef.current = setInterval(async () => {
         // Ne rien faire si l'année sélectionnée n'est pas l'année courante
-        if (yearRef.current !== new Date().getFullYear()) return;
+        if (
+          yearRef.current !== new Date().getFullYear() ||
+          selectedDateRef.current !== new Date().toISOString().slice(0, 10)
+        )
+          return;
         const changed = await loadGPSPositions(map);
         if (changed) loadPositionHistory(map);
       }, 30000);
@@ -662,17 +712,37 @@ export default function FieldsPage() {
         </div>
       </div>
 
-      <select
-        id="year"
-        value={year}
-        onChange={(e) => changeYear(parseInt(e.target.value))}
-      >
-        {YEARS.map((y) => (
-          <option key={y} value={y}>
-            {y}
-          </option>
-        ))}
-      </select>
+      <div className="fields-filters">
+        <select
+          id="year"
+          value={year}
+          onChange={(e) => changeYear(parseInt(e.target.value))}
+        >
+          {YEARS.map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+        <select
+          id="gps-date"
+          value={selectedDate}
+          onChange={(e) => changeDate(e.target.value)}
+          disabled={
+            !availableDates.filter((date) => date.startsWith(`${year}-`)).length
+          }
+        >
+          {!availableDates.filter((date) => date.startsWith(`${year}-`))
+            .length && <option value="">Aucune trace</option>}
+          {availableDates
+            .filter((date) => date.startsWith(`${year}-`))
+            .map((date) => (
+              <option key={date} value={date}>
+                {date}
+              </option>
+            ))}
+        </select>
+      </div>
     </div>
   );
 }

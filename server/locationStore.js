@@ -1,8 +1,7 @@
-const fs = require("fs");
-const path = require("path");
+const { pool } = require("./config");
 
 /*
- * Store partagé des positions GPS (mémoire + persistance disque périodique).
+ * Store partagé des positions GPS (persistance MariaDB).
  *
  * Extrait de routes/gps.js pour être utilisable à la fois par la route HTTP
  * POST /api/location (conservée pour compatibilité/tests) et par le handler
@@ -12,75 +11,6 @@ const path = require("path");
  * Module singleton : une seule instance de store par processus, ce qui
  * correspond à l'usage réel (un seul serveur Node par déploiement).
  */
-
-let positionsMemory = {};
-let historyMemory = {};
-
-let dirtyPositions = false;
-let dirtyHistory = false;
-
-const LOCATIONS_FILE = path.join(__dirname, "latest_positions.json");
-const HISTORY_FILE = path.join(__dirname, "location_history.json");
-
-function readJsonFileSafe(filePath, fallback = {}) {
-  try {
-    if (!fs.existsSync(filePath)) return fallback;
-    const content = fs.readFileSync(filePath, "utf8");
-    if (!content || !content.trim()) return fallback;
-    const parsed = JSON.parse(content);
-    return parsed && typeof parsed === "object" ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function loadMemoryFromDisk() {
-  positionsMemory = readJsonFileSafe(LOCATIONS_FILE, {});
-  historyMemory = readJsonFileSafe(HISTORY_FILE, {});
-  console.log("[GPS] Mémoire chargée depuis disque");
-}
-
-let persistenceStarted = false;
-function startDiskPersistence() {
-  if (persistenceStarted) return; // idempotent : evite un double setInterval
-  persistenceStarted = true; // si le module est require() depuis plusieurs fichiers
-
-  setInterval(() => {
-    if (dirtyPositions) {
-      fs.writeFile(
-        LOCATIONS_FILE,
-        JSON.stringify(positionsMemory, null, 2),
-        "utf8",
-        (err) => {
-          if (err)
-            console.error("[GPS] Erreur écriture positions:", err.message);
-        },
-      );
-      dirtyPositions = false;
-    }
-    if (dirtyHistory) {
-      const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-      for (const deviceId of Object.keys(historyMemory)) {
-        historyMemory[deviceId] = (historyMemory[deviceId] || []).filter(
-          (p) => {
-            const t = new Date(p.timestamp).getTime();
-            return Number.isFinite(t) && t >= cutoff;
-          },
-        );
-      }
-      fs.writeFile(
-        HISTORY_FILE,
-        JSON.stringify(historyMemory, null, 2),
-        "utf8",
-        (err) => {
-          if (err)
-            console.error("[GPS] Erreur écriture historique:", err.message);
-        },
-      );
-      dirtyHistory = false;
-    }
-  }, 10_000);
-}
 
 /**
  * Construit et valide un point de position a partir d'un payload brut.
@@ -123,9 +53,8 @@ function buildLocationPoint(deviceId, body) {
 }
 
 /**
- * Enregistre un point de position deja valide en memoire (positions
- * courantes + historique 24h) et diffuse la mise a jour aux clients web
- * via Socket.IO. `io` est passe en parametre plutot qu'importe directement
+ * Enregistre un point de position deja valide en base et diffuse la mise a
+ * jour aux clients web via Socket.IO. `io` est passe en parametre plutot qu'importe directement
  * pour eviter une dependance circulaire avec socket.js.
  */
 function ingestLocationPoint(io, newPoint) {
@@ -133,40 +62,76 @@ function ingestLocationPoint(io, newPoint) {
 
   io.emit("location_update", newPoint);
 
-  positionsMemory[deviceId] = newPoint;
-  dirtyPositions = true;
+  pool
+    .execute(
+      "INSERT INTO gps_latest (device_id, latitude, longitude, altitude, accuracy, speed, heading, source, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE latitude=VALUES(latitude), longitude=VALUES(longitude), altitude=VALUES(altitude), accuracy=VALUES(accuracy), speed=VALUES(speed), heading=VALUES(heading), source=VALUES(source), timestamp=VALUES(timestamp)",
+      [
+        deviceId,
+        newPoint.latitude,
+        newPoint.longitude,
+        newPoint.altitude,
+        newPoint.accuracy,
+        newPoint.speed,
+        newPoint.heading,
+        newPoint.source,
+        newPoint.timestamp,
+      ],
+    )
+    .catch((err) =>
+      console.error("[GPS] Erreur écriture gps_latest:", err.message),
+    );
 
-  if (!Array.isArray(historyMemory[deviceId])) historyMemory[deviceId] = [];
-  const history = historyMemory[deviceId];
-  const last = history.length ? history[history.length - 1] : null;
-  const isDuplicate =
-    last &&
-    String(last.timestamp) === String(newPoint.timestamp) &&
-    Number(last.latitude) === Number(newPoint.latitude) &&
-    Number(last.longitude) === Number(newPoint.longitude);
+  pool
+    .execute(
+      "INSERT INTO gps_track (device_id, latitude, longitude, altitude, accuracy, speed, heading, source, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        deviceId,
+        newPoint.latitude,
+        newPoint.longitude,
+        newPoint.altitude,
+        newPoint.accuracy,
+        newPoint.speed,
+        newPoint.heading,
+        newPoint.source,
+        newPoint.timestamp,
+      ],
+    )
+    .catch((err) =>
+      console.error("[GPS] Erreur écriture gps_track:", err.message),
+    );
+}
 
-  if (!isDuplicate) {
-    history.push(newPoint);
-    dirtyHistory = true;
+async function getPositions() {
+  const [rows] = await pool.execute("SELECT * FROM gps_latest");
+  const positions = {};
+  for (const row of rows) positions[row.device_id] = row;
+  return positions;
+}
+
+async function getHistory(dayStart, dayEnd) {
+  const [rows] = await pool.execute(
+    "SELECT device_id, latitude, longitude, altitude, accuracy, speed, heading, source, timestamp FROM gps_track WHERE timestamp >= ? AND timestamp < ? ORDER BY device_id, timestamp ASC",
+    [dayStart, dayEnd],
+  );
+  const positions = {};
+  for (const row of rows) {
+    if (!positions[row.device_id]) positions[row.device_id] = [];
+    positions[row.device_id].push(row);
   }
+  return positions;
 }
 
-function getPositions() {
-  return positionsMemory;
+async function getHistoryDates() {
+  const [rows] = await pool.execute(
+    "SELECT DISTINCT DATE_FORMAT(FROM_UNIXTIME(timestamp / 1000), '%Y-%m-%d') AS date FROM gps_track ORDER BY date DESC",
+  );
+  return rows.map((row) => row.date);
 }
-
-function getHistory() {
-  return historyMemory;
-}
-
-// Chargement au premier require() du module (comportement identique a
-// l'ancien code qui le faisait a la creation du router).
-loadMemoryFromDisk();
-startDiskPersistence();
 
 module.exports = {
   buildLocationPoint,
   ingestLocationPoint,
   getPositions,
   getHistory,
+  getHistoryDates,
 };

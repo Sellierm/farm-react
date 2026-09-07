@@ -116,11 +116,20 @@
   outline: 0.1rem solid rgba(0, 0, 0, 1);
 }
 
-.fields-page select {
-  text-align: center;
+.fields-filters {
   display: flex;
-  width: 50%;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  width: min(600px, 90%);
   margin: 1% auto;
+}
+
+.fields-filters select {
+  text-align: center;
+  width: 50%;
+  margin: 0;
+  padding: 4px 8px;
   border: solid #555;
   border-radius: 10px;
 }
@@ -293,9 +302,14 @@
     margin-bottom: 0;
   }
 
-  .fields-page select {
-    width: 80%;
+  .fields-filters {
+    width: 90%;
+    gap: 8px;
     margin: 12px auto;
+  }
+
+  .fields-filters select {
+    width: 80%;
     padding: 10px;
     font-size: 16px;
     border-radius: 10px;
