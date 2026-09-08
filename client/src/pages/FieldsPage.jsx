@@ -15,7 +15,7 @@ const CROP_COLORS = {
   "N/A": "rgb(66, 66, 66)",
 };
 
-const YEARS = [2022, 2023, 2024, 2025, 2026];
+const YEARS = [2022, 2023, 2024, 2025, 2026, 2027];
 
 const normalizeCultureName = (str) => {
   if (!str) return "N/A";
